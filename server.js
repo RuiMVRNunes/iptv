@@ -1,5 +1,5 @@
-// server.js — IPTV proxy + frontend (Express, ESM)
-// Usa só com conteúdos a que tens direito.
+// server.js — Express + Static + /proxy (rewrites .m3u8) + Basic Auth + /health
+// Usa apenas com conteúdos a que tens direito.
 
 import http from 'http';
 import https from 'https';
@@ -10,23 +10,40 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
+const __dirname  = path.dirname(__filename);
 const app = express();
 
-// Healthcheck
+app.set('trust proxy', true);
+
+// ---------- Health aberto ----------
 app.get('/health', (_, res) => res.type('text').send('ok'));
 
-// CORS básico para o browser
+// ---------- CORS + noindex ----------
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 
-// Frontend estático
+// ---------- Basic Auth (repo privado ≠ app privada) ----------
+const BASIC_USER = process.env.BASIC_AUTH_USER || 'rui';
+const BASIC_PASS = process.env.BASIC_AUTH_PASS || 'Qwerty86!';
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  if (!BASIC_USER || !BASIC_PASS) return next();
+  const hdr = String(req.headers.authorization || '');
+  if (hdr.startsWith('Basic ')) {
+    const [user, pass] = Buffer.from(hdr.slice(6), 'base64').toString('utf8').split(':');
+    if (user === BASIC_USER && pass === BASIC_PASS) return next();
+  }
+  res.setHeader('WWW-Authenticate', 'Basic realm="Restricted"');
+  return res.status(401).send('Auth required');
+});
+
+// ---------- Static frontend ----------
 const pubDir = path.join(__dirname, 'public');
 app.use(express.static(pubDir, { index: 'index.html', maxAge: '1h' }));
 app.get('/', (req, res) => {
@@ -35,25 +52,22 @@ app.get('/', (req, res) => {
   return res.status(200).type('text').send('Frontend missing (public/index.html). Proxy at /proxy');
 });
 
-// UAs úteis
+// ---------- Utils ----------
 const UAS = {
   chrome: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
   vlc:    'VLC/3.0.20 LibVLC/3.0.20',
   iptv:   'IPTV-Smarters-Player',
 };
-function pickUA(req) {
-  const param = String(req.query.ua || '').toLowerCase();
-  return UAS[param] || UAS.vlc; // por defeito, VLC
-}
+const pickUA = req => UAS[String(req.query.ua||'').toLowerCase()] || UAS.vlc;
 
-function isM3U8PathOrCT(urlObj, headers) {
+const isM3U8 = (urlObj, headers) => {
   const ct = String(headers['content-type'] || '').toLowerCase();
   return urlObj.pathname.toLowerCase().endsWith('.m3u8') ||
          ct.includes('application/vnd.apple.mpegurl') ||
          ct.includes('application/x-mpegurl');
-}
+};
 
-// Proxy com follow-redirects (até 5)
+// ---------- Core proxy (segue redirects + reescreve .m3u8) ----------
 function proxyOnce(targetUrl, req, res, hop = 0) {
   if (hop > 5) return !res.headersSent && res.status(508).send('Too many redirects');
 
@@ -61,14 +75,12 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
   try { target = new URL(targetUrl); }
   catch { return !res.headersSent && res.status(400).send('invalid url'); }
 
-  const isHttps = target.protocol === 'https:';
-  const lib = isHttps ? https : http;
+  const isHttps = target.protocol === 'https:', lib = isHttps ? https : http;
 
-  // Cabeçalhos para upstream
   const headers = {
     'User-Agent': pickUA(req),
     'Accept': req.headers['accept'] || '*/*',
-    'Accept-Encoding': 'identity', // evita gzip (facilita reescrita de m3u8)
+    'Accept-Encoding': 'identity',   // facilita reescrita
     'Connection': 'close',
     'Host': (req.query.host || target.host),
   };
@@ -83,60 +95,53 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
     port: target.port || (isHttps ? 443 : 80),
     path: target.pathname + target.search,
     method: 'GET',
-    headers,
-    timeout: 15000,
+    headers, timeout: 15000,
     agent: new (isHttps ? https.Agent : http.Agent)({ keepAlive: false }),
   };
 
-  const upstreamReq = lib.request(options, (upstreamRes) => {
-    const status = upstreamRes.statusCode || 0;
+  const upstreamReq = lib.request(options, (up) => {
+    const status = up.statusCode || 0;
 
     // Redirect?
     if ([301,302,303,307,308].includes(status)) {
-      const loc = upstreamRes.headers.location;
-      upstreamRes.resume();
+      const loc = up.headers.location; up.resume();
       if (!loc) return !res.headersSent && res.status(502).send('redirect without Location');
-      const nextUrl = new URL(loc, target).toString();
-      return proxyOnce(nextUrl, req, res, hop + 1);
+      return proxyOnce(new URL(loc, target).toString(), req, res, hop + 1);
     }
 
-    // Inspeção: ver o que o origin devolve (para debug)
+    // Inspect (debug): ?inspect=1
     if (String(req.query.inspect) === '1') {
       const chunks = [];
-      upstreamRes.on('data', d => { if (chunks.length < 64) chunks.push(d); });
-      upstreamRes.on('end', () => {
+      up.on('data', d => { if (chunks.length < 64) chunks.push(d); });
+      up.on('end', () => {
         const preview = Buffer.concat(chunks).toString('utf8').slice(0, 4096);
         res.status(200).json({
           resolvedUrl: target.toString(),
-          status,
-          headers: upstreamRes.headers,
-          willRewrite: isM3U8PathOrCT(target, upstreamRes.headers),
+          status, headers: up.headers,
+          willRewrite: isM3U8(target, up.headers),
           previewFirst4KB: preview
         });
       });
-      upstreamRes.on('error', () => {
-        if (!res.headersSent) res.status(502).json({ error: 'Upstream stream error' });
-      });
+      up.on('error', () => { if (!res.headersSent) res.status(502).json({ error:'Upstream stream error' }); });
       return;
     }
 
-    const headersToSend = { ...upstreamRes.headers };
-    const willRewrite = isM3U8PathOrCT(target, upstreamRes.headers);
+    const headersToSend = { ...up.headers };
+    const willRewrite = isM3U8(target, up.headers);
 
     if (willRewrite) {
-      // vamos reescrever → não enviamos estes headers como vieram
       delete headersToSend['content-encoding'];
       delete headersToSend['transfer-encoding'];
       delete headersToSend['content-length'];
       headersToSend['content-type'] = 'application/vnd.apple.mpegurl';
 
       const chunks = [];
-      upstreamRes.on('data', d => chunks.push(d));
-      upstreamRes.on('end', () => {
+      up.on('data', d => chunks.push(d));
+      up.on('end', () => {
         try {
           const text = Buffer.concat(chunks).toString('utf8');
 
-          // Propagar parâmetros úteis (exceto url/inspect)
+          // Propaga ua/referer/origin para os segmentos; força host de cada segmento
           const baseQS = new URLSearchParams();
           const ua = String(req.query.ua || '');
           if (ua) baseQS.set('ua', ua);
@@ -146,10 +151,8 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
           const proxied = text.split(/\r?\n/).map(line => {
             const t = line.trim();
             if (!t || t.startsWith('#')) return line;
-            // relativo → absoluto
             const abs = new URL(t, target).toString();
             const qs = new URLSearchParams(baseQS.toString());
-            // para alguns origins, o Host tem de ser igual ao do segmento
             qs.set('host', new URL(abs).host);
             qs.set('url', abs);
             return `/proxy?${qs.toString()}`;
@@ -162,42 +165,32 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
           else res.end();
         }
       });
-      upstreamRes.on('error', () => {
-        if (!res.headersSent) res.status(502).end('upstream stream error');
-        else res.end();
-      });
+      up.on('error', () => { if (!res.headersSent) res.status(502).end('upstream stream error'); else res.end(); });
       return;
     }
 
-    // Conteúdo não m3u8 → pass-through
     delete headersToSend['content-encoding'];
     if (!res.headersSent) res.writeHead(status || 200, headersToSend);
-    pipeline(upstreamRes, res, (err) => {
-      if (err) {
-        try { if (!res.headersSent) res.status(502).end('proxy pipe error'); else res.end(); } catch {}
-      }
+    pipeline(up, res, (err) => {
+      if (err) { try { if (!res.headersSent) res.status(502).end('proxy pipe error'); else res.end(); } catch {} }
     });
   });
 
-  upstreamReq.on('error', (err) => {
-    if (!res.headersSent) res.status(502).send('proxy error: ' + err.message);
-    else try { res.end(); } catch {}
-  });
-
+  upstreamReq.on('error', (err) => { if (!res.headersSent) res.status(502).send('proxy error: ' + err.message); else try { res.end(); } catch {} });
   upstreamReq.on('timeout', () => upstreamReq.destroy(new Error('upstream timeout')));
   req.on('aborted', () => upstreamReq.destroy());
   upstreamReq.end();
 }
 
-app.get('/proxy', (req, res) => {
-  // (opcional) proteção por chave: defina PROXY_KEY no Render e passe ?key=...
-  const REQUIRED = process.env.PROXY_KEY;
-  if (REQUIRED && req.query.key !== REQUIRED) return res.status(403).send('forbidden');
+// robots.txt
+app.get('/robots.txt', (req, res) => res.type('text').send('User-agent: *\nDisallow: /\n'));
 
+// ---------- /proxy ----------
+app.get('/proxy', (req, res) => {
   const raw = String(req.query.url || '');
   if (!raw) return res.status(400).send('missing url');
 
-  // Anti-loop: impedir /proxy → /proxy
+  // anti-loop
   try {
     const host = (req.headers.host || '').split(',')[0].trim();
     const t = new URL(raw);

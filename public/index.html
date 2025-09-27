@@ -39,7 +39,7 @@
   <div class="wrap">
     <aside class="panel">
       <label for="playlistUrl">Playlist M3U URL (remota)</label>
-      <input id="playlistUrl" type="text" value="" placeholder="https://servidor/playlist.m3u (ou usa Xtream abaixo)" />
+      <input id="playlistUrl" type="text" placeholder="https://servidor/playlist.m3u (ou usa Xtream abaixo)" />
       <div class="controls" style="margin-top:8px">
         <button id="loadBtn" class="btn">Carregar via Proxy</button>
         <button id="exportBtn" class="btn secondary" title="Exporta a lista atual para abrir no VLC">Exportar M3U</button>
@@ -50,32 +50,32 @@
 
       <label>Ou carregar de um ficheiro M3U/M3U8 (local)</label>
       <input id="fileInput" type="file" accept=".m3u,.m3u8,text/plain" />
-      <div class="tip">Dica: No VLC, abre a tua lista &rarr; <em>Save Playlist to File…</em> e escolhe <code>.m3u</code>.</div>
+      <div class="tip">Dica: No VLC, abre a tua lista → <em>Save Playlist to File…</em> e escolhe <code>.m3u</code>.</div>
 
       <div class="sep"></div>
 
-      <label for="proxyBase">Proxy base (usa UA do VLC por defeito)</label>
-      <!-- Relative path so it works on any host -->
-      <input id="proxyBase" type="text" value="/proxy?ua=vlc&url=" />
+      <label for="proxyBase">Proxy base</label>
+      <!-- preenchido para o teu portal como referer -->
+      <input id="proxyBase" type="text" value="/proxy?ua=chrome&referer=http://zxc.rekpv.com:8080&url=" />
 
       <div class="sep"></div>
       <div class="tip" style="margin-bottom:6px">Login Xtream (carregar lista automaticamente)</div>
       <label for="xtBase">Portal Xtream</label>
-      <input id="xtBase" type="text" value="" placeholder="http://host:porta" />
+      <input id="xtBase" type="text" value="http://zxc.rekpv.com:8080" />
       <div class="controls" style="margin-top:6px">
-        <input id="xtUser" type="text" placeholder="username" style="flex:1" />
-        <input id="xtPass" type="text" placeholder="password" style="flex:1" />
+        <input id="xtUser" type="text" placeholder="username" style="flex:1" value="uvxctmoh" />
+        <input id="xtPass" type="text" placeholder="password" style="flex:1" value="pLv486e0Qh" />
       </div>
       <div class="controls" style="margin-top:6px">
         <button id="xtLoginBtn" class="btn">Entrar (Xtream)</button>
         <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="xtRemember" type="checkbox" checked> Lembrar</label>
-        <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="xtAuto" type="checkbox"> Auto carregar</label>
+        <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="xtAuto" type="checkbox" checked> Auto carregar</label>
       </div>
 
       <div class="list" id="channelList"></div>
       <div class="muted" id="status" style="margin-top:8px"></div>
       <div class="muted" style="margin-top:8px">
-        Para funcionar no browser, usa sempre o <em>Proxy</em> (o player já aponta para <code>/proxy</code> por defeito).
+        O player usa sempre o <em>Proxy</em> (já apontado para <code>/proxy</code>).
       </div>
     </aside>
 
@@ -119,6 +119,16 @@
 
     let channels = [];
     let hlsInstance = null;
+
+    // Mantém o Proxy base em sincronia com o portal Xtream (referer)
+    function syncProxyBaseFromXtream(){
+      const base = (xtBaseInp.value || '').trim();
+      if (!base) return;
+      const url = new URL(base, base.startsWith('http') ? undefined : 'http://x/');
+      proxyBaseInp.value = `/proxy?ua=chrome&referer=${url.origin}${url.port ? ':'+url.port : ''}&url=`;
+    }
+    xtBaseInp.addEventListener('change', syncProxyBaseFromXtream);
+    xtBaseInp.addEventListener('blur', syncProxyBaseFromXtream);
 
     exportBtn.addEventListener('click', ()=>{
       if(!channels.length){ setStatus('Nada para exportar. Carrega uma playlist primeiro.'); return; }
@@ -176,8 +186,8 @@
       }
     });
 
+    // ===== Xtream =====
     xtLoginBtn.addEventListener('click', loginXtream);
-
     async function loginXtream(){
       const base = (xtBaseInp.value || '').trim().replace(/\/+$/,'');
       const user = (xtUserInp.value || '').trim();
@@ -220,6 +230,7 @@
       }
     }
 
+    // Autoload guardado + auto login
     (function(){
       try{
         const saved = JSON.parse(localStorage.getItem('xtream_cfg')||'null');
@@ -227,11 +238,19 @@
           if (saved.base) xtBaseInp.value = saved.base;
           if (saved.user) xtUserInp.value = saved.user;
           if (saved.pass) xtPassInp.value = saved.pass;
-          xtAutoChk.checked = !!saved.auto;
+          xtAutoChk.checked = saved.auto ?? true;
           xtRememberChk.checked = true;
-          if (saved.auto){ setTimeout(()=>loginXtream(), 300); }
+          syncProxyBaseFromXtream();
+          if (xtAutoChk.checked){ setTimeout(()=>loginXtream(), 300); }
+        } else {
+          // sem storage: ainda assim sincroniza o proxy base com o valor por defeito
+          syncProxyBaseFromXtream();
+          if (xtAutoChk.checked){ setTimeout(()=>loginXtream(), 300); }
         }
-      }catch{}
+      }catch{
+        syncProxyBaseFromXtream();
+        if (xtAutoChk.checked){ setTimeout(()=>loginXtream(), 300); }
+      }
     })();
 
     function setStatus(msg){ statusEl.textContent = msg; }
@@ -313,17 +332,14 @@
         setStatus('Erro no <video>: ' + (err?.message || ('code '+err?.code || 'desconhecido')));
       };
       let finalUrl = url;
-      if (!isM3U8(url)){
-        setStatus('Stream direto detetado. A tentar HLS (.m3u8)…');
-        try{
-          const maybe = await resolveHlsVariant(url, proxyBase);
-          if (maybe){ finalUrl = maybe; }
-        }catch(e){ console.warn('resolveHlsVariant falhou', e); }
-      }
+
+      // Se já for .m3u8, carrega via proxy; sem xhrSetup (evita loops)
       if (isM3U8(finalUrl)){
         if (window.Hls && Hls.isSupported()){
           const hls = new Hls({ enableWorker:true, lowLatencyMode:true });
-          // envia a MANIFEST já pelo proxy
+          hls.on(Hls.Events.ERROR, (event, data) => {
+            setStatus(`HLS error: ${data.type} / ${data.details} (fatal=${data.fatal})`);
+          });
           hls.loadSource(proxyBase + encodeURIComponent(finalUrl));
           hls.attachMedia(videoEl);
           hls.on(Hls.Events.MANIFEST_PARSED, () => { tryAutoplay(); });
@@ -336,47 +352,12 @@
           videoEl.play().catch(()=>{});
         }
       } else {
+        // URL direto → também via proxy (pode falhar conforme o browser)
         videoEl.src = proxyBase + encodeURIComponent(finalUrl);
-        setStatus('Reprodução direta via proxy (pode falhar em browsers).');
+        setStatus('Reprodução direta via proxy.');
         videoEl.addEventListener('loadedmetadata', () => { tryAutoplay(); }, { once:true });
         videoEl.play().catch(()=>{});
       }
-    }
-
-    async function resolveHlsVariant(url, proxyBase){
-      let u; try{ u = new URL(url); }catch{ return null; }
-      const parts = u.pathname.split('/').filter(Boolean);
-      let user, pass, id;
-      if (parts.length >= 4 && parts[0] === 'live'){
-        user = parts[1]; pass = parts[2]; id = parts[3].replace(/\.[A-Za-z0-9]+$/,'');
-      } else if (parts.length >= 3){
-        user = parts[0]; pass = parts[1]; id = parts[2].replace(/\.[A-Za-z0-9]+$/,'');
-      } else {
-        return null;
-      }
-      const origin = u.origin;
-      const candidates = [
-        `${origin}/live/${user}/${pass}/${id}.m3u8`,
-        `${origin}/hls/${user}/${pass}/${id}.m3u8`,
-        `${origin}/${user}/${pass}/${id}.m3u8`,
-      ];
-      for (const c of candidates){
-        const ok = await headLikeOk(c, proxyBase);
-        if (ok) return c;
-      }
-      return null;
-    }
-
-    async function headLikeOk(rawUrl, proxyBase){
-      try{
-        const prox = proxyBase + encodeURIComponent(rawUrl);
-        const r = await fetch(prox, { headers: { 'Range':'bytes=0-1023' } });
-        if (!r.ok) return false;
-        const ct = (r.headers.get('content-type')||'').toLowerCase();
-        if (rawUrl.toLowerCase().endsWith('.m3u8')) return true;
-        if (ct.includes('text/html')) return false;
-        return true;
-      }catch(e){ return false; }
     }
 
     function tryAutoplay(){

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IPTV Web Player (com proxy)</title>
+  <style>
+    :root { --bg:#0b1220; --fg:#e6eefc; --muted:#a7b2c7; --card:#121a2b; --accent:#5aa2ff; }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;background:var(--bg);color:var(--fg)}
+    header{padding:16px;border-bottom:1px solid #1e2a41;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent)}
+    h1{margin:0;font-size:18px}
+    .wrap{display:grid;grid-template-columns:360px 1fr;gap:16px;min-height:calc(100vh - 64px)}
+    .panel{background:var(--card);border:1px solid #1e2a41;border-radius:14px;padding:12px;margin:16px}
+    label{display:block;font-size:12px;color:var(--muted);margin:4px 0}
+    input[type="text"],select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a3959;background:#0f1728;color:var(--fg);outline:none}
+    .btn{appearance:none;border:0;background:var(--accent);color:#06122b;padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer}
+    .btn.secondary{background:#223354;color:#cfe0ff}
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .list{margin-top:8px;max-height:60vh;overflow:auto;border-top:1px solid #1e2a41}
+    .item{padding:10px;border-bottom:1px solid #1e2a41;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+    .item:hover{background:#0f1728}
+    .muted{color:var(--muted);font-size:12px}
+    main.panel{display:flex;flex-direction:column;min-height:0}
+    .player{flex:1 1 auto;min-height:50vh;background:#000;border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center;width:100%}
+    video{display:block;width:100%;height:100%;background:#000;object-fit:contain}
+    @media (max-width: 900px){ .wrap{grid-template-columns:1fr} .player{min-height:40vh} }
+    .sep{height:1px;background:#1e2a41;margin:10px 0}
+    .tip{font-size:12px;color:#a7b2c7}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>IPTV Web Player (com proxy)</h1>
+  </header>
+
+  <div class="wrap">
+    <aside class="panel">
+      <label for="playlistUrl">Playlist M3U URL (remota)</label>
+      <input id="playlistUrl" type="text" value="" placeholder="https://servidor/playlist.m3u (ou usa Xtream abaixo)" />
+      <div class="controls" style="margin-top:8px">
+        <button id="loadBtn" class="btn">Carregar via Proxy</button>
+        <button id="exportBtn" class="btn secondary" title="Exporta a lista atual para abrir no VLC">Exportar M3U</button>
+        <button id="testProxyBtn" class="btn secondary" title="Testa a ligação ao proxy">Testar Proxy</button>
+      </div>
+
+      <div class="sep"></div>
+
+      <label>Ou carregar de um ficheiro M3U/M3U8 (local)</label>
+      <input id="fileInput" type="file" accept=".m3u,.m3u8,text/plain" />
+      <div class="tip">Dica: No VLC, abre a tua lista &rarr; <em>Save Playlist to File…</em> e escolhe <code>.m3u</code>.</div>
+
+      <div class="sep"></div>
+
+      <label for="proxyBase">Proxy base (usa UA do VLC por defeito)</label>
+      <!-- Relative path so it works on any host -->
+      <input id="proxyBase" type="text" value="/proxy?ua=vlc&url=" />
+
+      <div class="sep"></div>
+      <div class="tip" style="margin-bottom:6px">Login Xtream (carregar lista automaticamente)</div>
+      <label for="xtBase">Portal Xtream</label>
+      <input id="xtBase" type="text" value="" placeholder="http://host:porta" />
+      <div class="controls" style="margin-top:6px">
+        <input id="xtUser" type="text" placeholder="username" style="flex:1" />
+        <input id="xtPass" type="text" placeholder="password" style="flex:1" />
+      </div>
+      <div class="controls" style="margin-top:6px">
+        <button id="xtLoginBtn" class="btn">Entrar (Xtream)</button>
+        <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="xtRemember" type="checkbox" checked> Lembrar</label>
+        <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="xtAuto" type="checkbox"> Auto carregar</label>
+      </div>
+
+      <div class="list" id="channelList"></div>
+      <div class="muted" id="status" style="margin-top:8px"></div>
+      <div class="muted" style="margin-top:8px">
+        Para funcionar no browser, usa sempre o <em>Proxy</em> (o player já aponta para <code>/proxy</code> por defeito).
+      </div>
+    </aside>
+
+    <main class="panel">
+      <div class="controls" style="justify-content:space-between; margin-bottom:8px">
+        <div id="nowPlaying" class="muted">Sem canal selecionado</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="autoplay" type="checkbox" checked> Autoplay</label>
+          <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="startWithSound" type="checkbox"> Som ao iniciar (no clique)</label>
+          <button id="muteBtn" class="btn secondary">Som desligado</button>
+          <a id="openExternal" href="#" target="_blank" rel="noopener"><button class="btn secondary">Abrir no VLC</button></a>
+        </div>
+      </div>
+      <div class="player">
+        <video id="video" controls playsinline preload="metadata" muted autoplay></video>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const loadBtn = document.getElementById('loadBtn');
+    const fileInput = document.getElementById('fileInput');
+    const playlistUrlInput = document.getElementById('playlistUrl');
+    const channelList = document.getElementById('channelList');
+    const videoEl = document.getElementById('video');
+    const statusEl = document.getElementById('status');
+    const nowPlaying = document.getElementById('nowPlaying');
+    const openExternal = document.getElementById('openExternal');
+    const proxyBaseInp = document.getElementById('proxyBase');
+    const exportBtn = document.getElementById('exportBtn');
+    const testProxyBtn = document.getElementById('testProxyBtn');
+    const autoplayChk = document.getElementById('autoplay');
+    const startWithSoundChk = document.getElementById('startWithSound');
+    const muteBtn = document.getElementById('muteBtn');
+    const xtBaseInp = document.getElementById('xtBase');
+    const xtUserInp = document.getElementById('xtUser');
+    const xtPassInp = document.getElementById('xtPass');
+    const xtLoginBtn = document.getElementById('xtLoginBtn');
+    const xtRememberChk = document.getElementById('xtRemember');
+    const xtAutoChk = document.getElementById('xtAuto');
+
+    let channels = [];
+    let hlsInstance = null;
+
+    exportBtn.addEventListener('click', ()=>{
+      if(!channels.length){ setStatus('Nada para exportar. Carrega uma playlist primeiro.'); return; }
+      const m3u = buildM3U(channels);
+      const blob = new Blob([m3u], {type:'audio/x-mpegurl'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'playlist-export.m3u';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 1000);
+      setStatus(`Exportados ${channels.length} canais para playlist-export.m3u`);
+    });
+
+    loadBtn.addEventListener('click', async () => {
+      const url = playlistUrlInput.value.trim();
+      if (!url) return;
+      setStatus('A carregar playlist (via proxy)…');
+      channelList.innerHTML = '';
+      try {
+        const txt = await fetchTextViaProxy(url);
+        channels = parseM3U(txt);
+        renderList(channels);
+        setStatus(`Carregados ${channels.length} canais.`);
+      } catch (err) {
+        console.error(err);
+        setStatus('Falha ao carregar a playlist (proxy/URL).');
+      }
+    });
+
+    fileInput.addEventListener('change', async (ev)=>{
+      const f = ev.target.files && ev.target.files[0];
+      if(!f) return;
+      try{
+        const txt = await f.text();
+        channels = parseM3U(txt);
+        renderList(channels);
+        setStatus(`Carregados ${channels.length} canais do ficheiro.`);
+      }catch(e){
+        console.error(e);
+        setStatus('Não foi possível ler o ficheiro.');
+      }
+    });
+
+    testProxyBtn.addEventListener('click', async ()=>{
+      const base = proxyBaseInp.value.trim();
+      const testUrl = 'https://example.com/';
+      try{
+        const r = await fetch(base + encodeURIComponent(testUrl));
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        await r.text();
+        setStatus('✅ Proxy OK: recebeu resposta de example.com');
+      }catch(err){
+        console.error(err);
+        setStatus('❌ Proxy indisponível: ' + (err.message||err));
+      }
+    });
+
+    xtLoginBtn.addEventListener('click', loginXtream);
+
+    async function loginXtream(){
+      const base = (xtBaseInp.value || '').trim().replace(/\/+$/,'');
+      const user = (xtUserInp.value || '').trim();
+      const pass = (xtPassInp.value || '').trim();
+      if (!base || !user || !pass){ setStatus('Preenche portal/username/password'); return; }
+      setStatus('A entrar no portal Xtream…');
+      const api = `${base}/player_api.php`;
+      const proxyBase = proxyBaseInp.value.trim();
+      try{
+        const catsUrl = `${api}?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_live_categories`;
+        const streamsUrl = `${api}?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_live_streams`;
+        const [cats, streams] = await Promise.all([proxiedJson(catsUrl, proxyBase), proxiedJson(streamsUrl, proxyBase)]);
+        const catMap = {}; if (Array.isArray(cats)) cats.forEach(c => { if (c && c.category_id) catMap[c.category_id] = c.category_name || ''; });
+        const makeUrl = (sid) => `${base}/live/${user}/${pass}/${sid}.m3u8`;
+        channels = (Array.isArray(streams) ? streams : []).map(s => ({
+          name: s?.name || `#${s?.stream_id}`,
+          group: catMap[s?.category_id] || '',
+          logo: s?.stream_icon || '',
+          url: makeUrl(s?.stream_id)
+        }));
+        renderList(channels);
+        setStatus(`Entrou. ${channels.length} canais.`);
+        if (xtRememberChk.checked){
+          localStorage.setItem('xtream_cfg', JSON.stringify({ base, user, pass, auto: !!xtAutoChk.checked }));
+        }
+      }catch(e){
+        console.error(e);
+        setStatus('Falha no portal Xtream (auth/ligação). Verifica dados ou proxy.');
+      }
+    }
+
+    async function proxiedJson(url, proxyBase){
+      const r = await fetch(proxyBase + encodeURIComponent(url));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const txt = await r.text();
+      try { return JSON.parse(txt); } catch {
+        const i = txt.indexOf('{') !== -1 ? txt.indexOf('{') : txt.indexOf('[');
+        if (i >= 0) return JSON.parse(txt.slice(i));
+        throw new Error('Invalid JSON');
+      }
+    }
+
+    (function(){
+      try{
+        const saved = JSON.parse(localStorage.getItem('xtream_cfg')||'null');
+        if (saved){
+          if (saved.base) xtBaseInp.value = saved.base;
+          if (saved.user) xtUserInp.value = saved.user;
+          if (saved.pass) xtPassInp.value = saved.pass;
+          xtAutoChk.checked = !!saved.auto;
+          xtRememberChk.checked = true;
+          if (saved.auto){ setTimeout(()=>loginXtream(), 300); }
+        }
+      }catch{}
+    })();
+
+    function setStatus(msg){ statusEl.textContent = msg; }
+
+    async function fetchTextViaProxy(url){
+      const proxyBase = proxyBaseInp.value.trim();
+      const proxied = proxyBase + encodeURIComponent(url);
+      const r = await fetch(proxied);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const text = await r.text();
+      return text;
+    }
+
+    function parseM3U(text){
+      const lines = text.split(/\r?\n/);
+      const out = [];
+      let current = null;
+      for (let i=0;i<lines.length;i++){
+        const line = lines[i].trim();
+        if (!line) continue;
+        if (line.startsWith('#EXTINF')){
+          const name = line.split(',').slice(1).join(',').trim();
+          current = { name: name || 'Sem nome', url: '' };
+        } else if (current && !line.startsWith('#')){
+          current.url = line;
+          out.push(current);
+          current = null;
+        }
+      }
+      return out;
+    }
+
+    function buildM3U(items){
+      let out = '#EXTM3U\n';
+      for(const ch of items){
+        const name = (ch.name || 'Sem nome').replace(/\n/g,' ');
+        out += `#EXTINF:-1,${name}\n${ch.url}\n`;
+      }
+      return out;
+    }
+
+    function renderList(items){
+      if (!items.length){
+        channelList.innerHTML = '<div class="muted" style="padding:10px">Sem resultados.</div>';
+        return;
+      }
+      channelList.innerHTML = items.map((c,idx)=>`
+        <div class="item" data-idx="${idx}">${escapeHtml(c.name)} <span class="muted">▶</span></div>`).join('');
+      channelList.querySelectorAll('.item').forEach(el => {
+        el.addEventListener('click', ()=>{
+          const idx = Number(el.getAttribute('data-idx'));
+          if (startWithSoundChk && startWithSoundChk.checked) {
+            videoEl.muted = false;
+            muteBtn.textContent = 'Som ligado';
+          }
+          playChannel(items[idx]);
+        });
+      });
+    }
+
+    function playChannel(ch){
+      nowPlaying.textContent = `A reproduzir: ${ch.name}`;
+      openExternal.href = ch.url;
+      const proxyBase = proxyBaseInp.value.trim();
+      playStreamURL(ch.url, proxyBase);
+    }
+
+    function destroyHls(){
+      if (hlsInstance){
+        try{ hlsInstance.destroy(); }catch{}
+        hlsInstance = null;
+      }
+    }
+
+    async function playStreamURL(url, proxyBase){
+      destroyHls();
+      videoEl.onerror = () => {
+        const err = videoEl.error;
+        setStatus('Erro no <video>: ' + (err?.message || ('code '+err?.code || 'desconhecido')));
+      };
+      let finalUrl = url;
+      if (!isM3U8(url)){
+        setStatus('Stream direto detetado. A tentar HLS (.m3u8)…');
+        try{
+          const maybe = await resolveHlsVariant(url, proxyBase);
+          if (maybe){ finalUrl = maybe; }
+        }catch(e){ console.warn('resolveHlsVariant falhou', e); }
+      }
+      if (isM3U8(finalUrl)){
+        if (window.Hls && Hls.isSupported()){
+          const hls = new Hls({
+            enableWorker:true,
+            lowLatencyMode:true,
+            xhrSetup: (xhr, srcUrl) => {
+              const proxied = proxyBase + encodeURIComponent(srcUrl);
+              xhr.open('GET', proxied, true);
+              xhr.setRequestHeader('Range','bytes=0-');
+            }
+          });
+          hls.on(Hls.Events.ERROR, (event, data) => {
+            setStatus(`HLS error: ${data.type} / ${data.details} (fatal=${data.fatal})`);
+          });
+          hls.loadSource(finalUrl);
+          hls.attachMedia(videoEl);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => { tryAutoplay(); });
+          hlsInstance = hls;
+          setStatus('Reprodução HLS via proxy.');
+        } else {
+          videoEl.src = proxyBase + encodeURIComponent(finalUrl);
+          setStatus('HLS nativo via proxy.');
+          videoEl.addEventListener('loadedmetadata', () => { tryAutoplay(); }, { once:true });
+          videoEl.play().catch(()=>{});
+        }
+      } else {
+        videoEl.src = proxyBase + encodeURIComponent(finalUrl);
+        setStatus('Reprodução direta via proxy (pode falhar em browsers).');
+        videoEl.addEventListener('loadedmetadata', () => { tryAutoplay(); }, { once:true });
+        videoEl.play().catch(()=>{});
+      }
+    }
+
+    async function resolveHlsVariant(url, proxyBase){
+      let u; try{ u = new URL(url); }catch{ return null; }
+      const parts = u.pathname.split('/').filter(Boolean);
+      let user, pass, id;
+      if (parts.length >= 4 && parts[0] === 'live'){
+        user = parts[1]; pass = parts[2]; id = parts[3].replace(/\.[A-Za-z0-9]+$/,'');
+      } else if (parts.length >= 3){
+        user = parts[0]; pass = parts[1]; id = parts[2].replace(/\.[A-Za-z0-9]+$/,'');
+      } else {
+        return null;
+      }
+      const origin = u.origin;
+      const candidates = [
+        `${origin}/live/${user}/${pass}/${id}.m3u8`,
+        `${origin}/hls/${user}/${pass}/${id}.m3u8`,
+        `${origin}/${user}/${pass}/${id}.m3u8`,
+      ];
+      for (const c of candidates){
+        const ok = await headLikeOk(c, proxyBase);
+        if (ok) return c;
+      }
+      return null;
+    }
+
+    async function headLikeOk(rawUrl, proxyBase){
+      try{
+        const prox = proxyBase + encodeURIComponent(rawUrl);
+        const r = await fetch(prox, { headers: { 'Range':'bytes=0-1023' } });
+        if (!r.ok) return false;
+        const ct = (r.headers.get('content-type')||'').toLowerCase();
+        if (rawUrl.toLowerCase().endsWith('.m3u8')) return true;
+        if (ct.includes('text/html')) return false;
+        return true;
+      }catch(e){ return false; }
+    }
+
+    function tryAutoplay(){
+      if (!autoplayChk || !autoplayChk.checked) return;
+      try {
+        const p = videoEl.play();
+        if (p && typeof p.then === 'function') { p.catch(()=>{}); }
+      } catch {}
+    }
+
+    muteBtn.addEventListener('click', ()=>{
+      videoEl.muted = !videoEl.muted;
+      muteBtn.textContent = videoEl.muted ? 'Som desligado' : 'Som ligado';
+      if (!videoEl.paused) return;
+      tryAutoplay();
+    });
+
+    function isM3U8(url){ return /\.m3u8(\?|$)/i.test(url); }
+    function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;"); }
+  </script>
+</body>
+</html>

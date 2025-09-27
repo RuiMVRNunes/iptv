@@ -11,10 +11,11 @@
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;background:var(--bg);color:var(--fg)}
     header{padding:16px;border-bottom:1px solid #1e2a41;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent)}
     h1{margin:0;font-size:18px}
+
     .wrap{display:grid;grid-template-columns:360px 1fr;gap:16px;min-height:calc(100vh - 64px)}
     .panel{background:var(--card);border:1px solid #1e2a41;border-radius:14px;padding:12px;margin:16px}
     label{display:block;font-size:12px;color:var(--muted);margin:4px 0}
-    input[type="text"],select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a3959;background:#0f1728;color:var(--fg);outline:none}
+    input[type="text"],input[type="password"],select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a3959;background:#0f1728;color:var(--fg);outline:none}
     .btn{appearance:none;border:0;background:var(--accent);color:#06122b;padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer}
     .btn.secondary{background:#223354;color:#cfe0ff}
     .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -28,6 +29,21 @@
     @media (max-width: 900px){ .wrap{grid-template-columns:1fr} .player{min-height:40vh} }
     .sep{height:1px;background:#1e2a41;margin:10px 0}
     .tip{font-size:12px;color:#a7b2c7}
+
+    /* Overlay de Login */
+    .overlay{
+      position:fixed;inset:0;background:rgba(3,6,16,.85);
+      display:flex;align-items:center;justify-content:center;z-index:9999;
+    }
+    .login-card{
+      width:min(420px, 92vw); background:var(--card);
+      border:1px solid #1e2a41; border-radius:16px; padding:18px;
+      box-shadow:0 10px 40px rgba(0,0,0,.5)
+    }
+    .login-card h2{margin:0 0 12px 0;font-size:18px}
+    .row{display:flex;gap:8px}
+    .row > *{flex:1}
+    .err{color:#ffb3b3;font-size:12px;min-height:16px}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
@@ -36,14 +52,30 @@
     <h1>IPTV Web Player (com proxy)</h1>
   </header>
 
-  <div class="wrap">
+  <!-- Overlay de Login -->
+  <div id="loginOverlay" class="overlay" hidden>
+    <div class="login-card">
+      <h2>Entrar</h2>
+      <label>Utilizador</label>
+      <input id="authUser" type="text" autocomplete="username" value="rui" />
+      <label>Palavra-passe</label>
+      <input id="authPass" type="password" autocomplete="current-password" value="Qwerty86!" />
+      <div class="err" id="authErr"></div>
+      <div class="controls" style="justify-content:flex-end">
+        <button id="authBtn" class="btn">Entrar</button>
+      </div>
+      <div class="tip" style="margin-top:8px">Depois de entrar, os canais do Xtream serão carregados automaticamente.</div>
+    </div>
+  </div>
+
+  <div class="wrap" id="app" style="visibility:hidden">
     <aside class="panel">
       <label for="playlistUrl">Playlist M3U URL (remota)</label>
       <input id="playlistUrl" type="text" placeholder="https://servidor/playlist.m3u (ou usa Xtream abaixo)" />
       <div class="controls" style="margin-top:8px">
         <button id="loadBtn" class="btn">Carregar via Proxy</button>
-        <button id="exportBtn" class="btn secondary" title="Exporta a lista atual para abrir no VLC">Exportar M3U</button>
-        <button id="testProxyBtn" class="btn secondary" title="Testa a ligação ao proxy">Testar Proxy</button>
+        <button id="exportBtn" class="btn secondary" title="Exportar a lista atual">Exportar M3U</button>
+        <button id="testProxyBtn" class="btn secondary" title="Testar ligação ao proxy">Testar Proxy</button>
       </div>
 
       <div class="sep"></div>
@@ -55,11 +87,10 @@
       <div class="sep"></div>
 
       <label for="proxyBase">Proxy base</label>
-      <!-- preenchido para o teu portal como referer -->
       <input id="proxyBase" type="text" value="/proxy?ua=chrome&referer=http://zxc.rekpv.com:8080&url=" />
 
       <div class="sep"></div>
-      <div class="tip" style="margin-bottom:6px">Login Xtream (carregar lista automaticamente)</div>
+      <div class="tip" style="margin-bottom:6px">Login Xtream (carrega lista automaticamente após login)</div>
       <label for="xtBase">Portal Xtream</label>
       <input id="xtBase" type="text" value="http://zxc.rekpv.com:8080" />
       <div class="controls" style="margin-top:6px">
@@ -96,6 +127,46 @@
   </div>
 
   <script>
+    // ======= Login de App (overlay) =======
+    const loginOverlay = document.getElementById('loginOverlay');
+    const authUser = document.getElementById('authUser');
+    const authPass = document.getElementById('authPass');
+    const authBtn  = document.getElementById('authBtn');
+    const authErr  = document.getElementById('authErr');
+    const appWrap  = document.getElementById('app');
+
+    const APP_USER = 'rui';
+    const APP_PASS = 'Qwerty86!';
+
+    function showApp(){
+      loginOverlay.hidden = true;
+      appWrap.style.visibility = 'visible';
+      // auto: sincroniza proxy referer e entra no Xtream
+      syncProxyBaseFromXtream();
+      if (document.getElementById('xtAuto').checked) {
+        setTimeout(()=>loginXtream(), 200);
+      }
+    }
+
+    function doLogin(){
+      const u = authUser.value.trim(), p = authPass.value;
+      if (u === APP_USER && p === APP_PASS){
+        localStorage.setItem('app_login_ok','1');
+        showApp();
+      } else {
+        authErr.textContent = 'Credenciais inválidas.';
+      }
+    }
+    authBtn.addEventListener('click', doLogin);
+    authPass.addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
+
+    (function initLogin(){
+      const ok = localStorage.getItem('app_login_ok') === '1';
+      if (ok) { showApp(); }
+      else { loginOverlay.hidden = false; appWrap.style.visibility = 'hidden'; }
+    })();
+
+    // ======= Resto da App (igual ao anterior, mas com auto Xtream) =======
     const loadBtn = document.getElementById('loadBtn');
     const fileInput = document.getElementById('fileInput');
     const playlistUrlInput = document.getElementById('playlistUrl');
@@ -120,13 +191,16 @@
     let channels = [];
     let hlsInstance = null;
 
-    // Mantém o Proxy base em sincronia com o portal Xtream (referer)
     function syncProxyBaseFromXtream(){
-      const base = (xtBaseInp.value || '').trim();
+      const base = (xtBaseInp.value || '').trim().replace(/\/+$/,'');
       if (!base) return;
-      const url = new URL(base, base.startsWith('http') ? undefined : 'http://x/');
-      proxyBaseInp.value = `/proxy?ua=chrome&referer=${url.origin}${url.port ? ':'+url.port : ''}&url=`;
+      try{
+        const u = new URL(base, base.startsWith('http') ? undefined : 'http://x/');
+        // origin já inclui a porta se for não padrão — não repetir
+        proxyBaseInp.value = `/proxy?ua=chrome&referer=${u.origin}&url=`;
+      }catch{}
     }
+
     xtBaseInp.addEventListener('change', syncProxyBaseFromXtream);
     xtBaseInp.addEventListener('blur', syncProxyBaseFromXtream);
 
@@ -139,7 +213,7 @@
       a.href = url; a.download = 'playlist-export.m3u';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(url), 1000);
-      setStatus(`Exportados ${channels.length} canais para playlist-export.m3u`);
+      setStatus(\`Exportados \${channels.length} canais para playlist-export.m3u\`);
     });
 
     loadBtn.addEventListener('click', async () => {
@@ -151,7 +225,7 @@
         const txt = await fetchTextViaProxy(url);
         channels = parseM3U(txt);
         renderList(channels);
-        setStatus(`Carregados ${channels.length} canais.`);
+        setStatus(\`Carregados \${channels.length} canais.\`);
       } catch (err) {
         console.error(err);
         setStatus('Falha ao carregar a playlist (proxy/URL).');
@@ -165,7 +239,7 @@
         const txt = await f.text();
         channels = parseM3U(txt);
         renderList(channels);
-        setStatus(`Carregados ${channels.length} canais do ficheiro.`);
+        setStatus(\`Carregados \${channels.length} canais do ficheiro.\`);
       }catch(e){
         console.error(e);
         setStatus('Não foi possível ler o ficheiro.');
@@ -194,22 +268,22 @@
       const pass = (xtPassInp.value || '').trim();
       if (!base || !user || !pass){ setStatus('Preenche portal/username/password'); return; }
       setStatus('A entrar no portal Xtream…');
-      const api = `${base}/player_api.php`;
+      const api = \`\${base}/player_api.php\`;
       const proxyBase = proxyBaseInp.value.trim();
       try{
-        const catsUrl = `${api}?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_live_categories`;
-        const streamsUrl = `${api}?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_live_streams`;
+        const catsUrl = \`\${api}?username=\${encodeURIComponent(user)}&password=\${encodeURIComponent(pass)}&action=get_live_categories\`;
+        const streamsUrl = \`\${api}?username=\${encodeURIComponent(user)}&password=\${encodeURIComponent(pass)}&action=get_live_streams\`;
         const [cats, streams] = await Promise.all([proxiedJson(catsUrl, proxyBase), proxiedJson(streamsUrl, proxyBase)]);
         const catMap = {}; if (Array.isArray(cats)) cats.forEach(c => { if (c && c.category_id) catMap[c.category_id] = c.category_name || ''; });
-        const makeUrl = (sid) => `${base}/live/${user}/${pass}/${sid}.m3u8`;
+        const makeUrl = (sid) => \`\${base}/live/\${user}/\${pass}/\${sid}.m3u8\`;
         channels = (Array.isArray(streams) ? streams : []).map(s => ({
-          name: s?.name || `#${s?.stream_id}`,
+          name: s?.name || \`#\${s?.stream_id}\`,
           group: catMap[s?.category_id] || '',
           logo: s?.stream_icon || '',
           url: makeUrl(s?.stream_id)
         }));
         renderList(channels);
-        setStatus(`Entrou. ${channels.length} canais.`);
+        setStatus(\`Entrou. \${channels.length} canais.\`);
         if (xtRememberChk.checked){
           localStorage.setItem('xtream_cfg', JSON.stringify({ base, user, pass, auto: !!xtAutoChk.checked }));
         }
@@ -230,7 +304,7 @@
       }
     }
 
-    // Autoload guardado + auto login
+    // Autoload guardado
     (function(){
       try{
         const saved = JSON.parse(localStorage.getItem('xtream_cfg')||'null');
@@ -240,28 +314,17 @@
           if (saved.pass) xtPassInp.value = saved.pass;
           xtAutoChk.checked = saved.auto ?? true;
           xtRememberChk.checked = true;
-          syncProxyBaseFromXtream();
-          if (xtAutoChk.checked){ setTimeout(()=>loginXtream(), 300); }
-        } else {
-          // sem storage: ainda assim sincroniza o proxy base com o valor por defeito
-          syncProxyBaseFromXtream();
-          if (xtAutoChk.checked){ setTimeout(()=>loginXtream(), 300); }
         }
-      }catch{
-        syncProxyBaseFromXtream();
-        if (xtAutoChk.checked){ setTimeout(()=>loginXtream(), 300); }
-      }
+      }catch{}
     })();
 
     function setStatus(msg){ statusEl.textContent = msg; }
 
     async function fetchTextViaProxy(url){
-      const proxyBase = proxyBaseInp.value.trim();
-      const proxied = proxyBase + encodeURIComponent(url);
+      const proxied = proxyBaseInp.value.trim() + encodeURIComponent(url);
       const r = await fetch(proxied);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const text = await r.text();
-      return text;
+      if (!r.ok) throw new Error(\`HTTP \${r.status}\`);
+      return await r.text();
     }
 
     function parseM3U(text){
@@ -314,8 +377,7 @@
     function playChannel(ch){
       nowPlaying.textContent = `A reproduzir: ${ch.name}`;
       openExternal.href = ch.url;
-      const proxyBase = proxyBaseInp.value.trim();
-      playStreamURL(ch.url, proxyBase);
+      playStreamURL(ch.url, proxyBaseInp.value.trim());
     }
 
     function destroyHls(){
@@ -331,29 +393,25 @@
         const err = videoEl.error;
         setStatus('Erro no <video>: ' + (err?.message || ('code '+err?.code || 'desconhecido')));
       };
-      let finalUrl = url;
-
-      // Se já for .m3u8, carrega via proxy; sem xhrSetup (evita loops)
-      if (isM3U8(finalUrl)){
+      if (/\.m3u8(\?|$)/i.test(url)){
         if (window.Hls && Hls.isSupported()){
           const hls = new Hls({ enableWorker:true, lowLatencyMode:true });
           hls.on(Hls.Events.ERROR, (event, data) => {
             setStatus(`HLS error: ${data.type} / ${data.details} (fatal=${data.fatal})`);
           });
-          hls.loadSource(proxyBase + encodeURIComponent(finalUrl));
+          hls.loadSource(proxyBase + encodeURIComponent(url)); // já proxificado aqui
           hls.attachMedia(videoEl);
           hls.on(Hls.Events.MANIFEST_PARSED, () => { tryAutoplay(); });
           hlsInstance = hls;
           setStatus('Reprodução HLS via proxy.');
         } else {
-          videoEl.src = proxyBase + encodeURIComponent(finalUrl);
+          videoEl.src = proxyBase + encodeURIComponent(url);
           setStatus('HLS nativo via proxy.');
           videoEl.addEventListener('loadedmetadata', () => { tryAutoplay(); }, { once:true });
           videoEl.play().catch(()=>{});
         }
       } else {
-        // URL direto → também via proxy (pode falhar conforme o browser)
-        videoEl.src = proxyBase + encodeURIComponent(finalUrl);
+        videoEl.src = proxyBase + encodeURIComponent(url);
         setStatus('Reprodução direta via proxy.');
         videoEl.addEventListener('loadedmetadata', () => { tryAutoplay(); }, { once:true });
         videoEl.play().catch(()=>{});
@@ -362,10 +420,7 @@
 
     function tryAutoplay(){
       if (!autoplayChk || !autoplayChk.checked) return;
-      try {
-        const p = videoEl.play();
-        if (p && typeof p.then === 'function') { p.catch(()=>{}); }
-      } catch {}
+      try { const p = videoEl.play(); if (p && typeof p.then==='function') p.catch(()=>{}); } catch {}
     }
 
     muteBtn.addEventListener('click', ()=>{
@@ -375,7 +430,6 @@
       tryAutoplay();
     });
 
-    function isM3U8(url){ return /\.m3u8(\?|$)/i.test(url); }
     function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;"); }
   </script>
 </body>

@@ -322,19 +322,9 @@
       }
       if (isM3U8(finalUrl)){
         if (window.Hls && Hls.isSupported()){
-          const hls = new Hls({
-            enableWorker:true,
-            lowLatencyMode:true,
-            xhrSetup: (xhr, srcUrl) => {
-              const proxied = proxyBase + encodeURIComponent(srcUrl);
-              xhr.open('GET', proxied, true);
-              xhr.setRequestHeader('Range','bytes=0-');
-            }
-          });
-          hls.on(Hls.Events.ERROR, (event, data) => {
-            setStatus(`HLS error: ${data.type} / ${data.details} (fatal=${data.fatal})`);
-          });
-          hls.loadSource(finalUrl);
+          const hls = new Hls({ enableWorker:true, lowLatencyMode:true });
+          // envia a MANIFEST já pelo proxy
+          hls.loadSource(proxyBase + encodeURIComponent(finalUrl));
           hls.attachMedia(videoEl);
           hls.on(Hls.Events.MANIFEST_PARSED, () => { tryAutoplay(); });
           hlsInstance = hls;

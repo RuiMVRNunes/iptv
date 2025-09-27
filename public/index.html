@@ -15,14 +15,14 @@
     .wrap{display:grid;grid-template-columns:360px 1fr;gap:16px;min-height:calc(100vh - 64px)}
     .panel{background:var(--card);border:1px solid #1e2a41;border-radius:14px;padding:12px;margin:16px}
     label{display:block;font-size:12px;color:var(--muted);margin:4px 0}
-    input[type="text"],input[type="password"],select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a3959;background:#0f1728;color:var(--fg);outline:none}
+    input[type="text"],input[type="password"],select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a3959;background:#0f1728;color:#e6eefc;outline:none}
     .btn{appearance:none;border:0;background:var(--accent);color:#06122b;padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer}
     .btn.secondary{background:#223354;color:#cfe0ff}
     .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .list{margin-top:8px;max-height:60vh;overflow:auto;border-top:1px solid #1e2a41}
     .item{padding:10px;border-bottom:1px solid #1e2a41;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
     .item:hover{background:#0f1728}
-    .muted{color:var(--muted);font-size:12px}
+    .muted{color:#a7b2c7;font-size:12px}
     main.panel{display:flex;flex-direction:column;min-height:0}
     .player{flex:1 1 auto;min-height:50vh;background:#000;border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center;width:100%}
     video{display:block;width:100%;height:100%;background:#000;object-fit:contain}
@@ -31,15 +31,8 @@
     .tip{font-size:12px;color:#a7b2c7}
 
     /* Overlay de Login */
-    .overlay{
-      position:fixed;inset:0;background:rgba(3,6,16,.85);
-      display:flex;align-items:center;justify-content:center;z-index:9999;
-    }
-    .login-card{
-      width:min(420px, 92vw); background:var(--card);
-      border:1px solid #1e2a41; border-radius:16px; padding:18px;
-      box-shadow:0 10px 40px rgba(0,0,0,.5)
-    }
+    .overlay{position:fixed;inset:0;background:rgba(3,6,16,.85);display:flex;align-items:center;justify-content:center;z-index:9999;}
+    .login-card{width:min(420px, 92vw); background:var(--card); border:1px solid #1e2a41; border-radius:16px; padding:18px; box-shadow:0 10px 40px rgba(0,0,0,.5)}
     .login-card h2{margin:0 0 12px 0;font-size:18px}
     .row{display:flex;gap:8px}
     .row > *{flex:1}
@@ -64,7 +57,7 @@
       <div class="controls" style="justify-content:flex-end">
         <button id="authBtn" class="btn">Entrar</button>
       </div>
-      <div class="tip" style="margin-top:8px">Depois de entrar, os canais do Xtream serão carregados automaticamente.</div>
+      <div class="tip" style="margin-top:8px">Depois de entrar, os canais do Xtream serao carregados automaticamente.</div>
     </div>
   </div>
 
@@ -82,7 +75,7 @@
 
       <label>Ou carregar de um ficheiro M3U/M3U8 (local)</label>
       <input id="fileInput" type="file" accept=".m3u,.m3u8,text/plain" />
-      <div class="tip">Dica: No VLC, abre a tua lista → <em>Save Playlist to File…</em> e escolhe <code>.m3u</code>.</div>
+      <div class="tip">Dica: No VLC, abre a tua lista -> Save Playlist to File… e escolhe .m3u</div>
 
       <div class="sep"></div>
 
@@ -90,7 +83,7 @@
       <input id="proxyBase" type="text" value="/proxy?ua=chrome&referer=http://zxc.rekpv.com:8080&url=" />
 
       <div class="sep"></div>
-      <div class="tip" style="margin-bottom:6px">Login Xtream (carrega lista automaticamente após login)</div>
+      <div class="tip" style="margin-bottom:6px">Login Xtream (carrega lista automaticamente apos login)</div>
       <label for="xtBase">Portal Xtream</label>
       <input id="xtBase" type="text" value="http://zxc.rekpv.com:8080" />
       <div class="controls" style="margin-top:6px">
@@ -105,9 +98,7 @@
 
       <div class="list" id="channelList"></div>
       <div class="muted" id="status" style="margin-top:8px"></div>
-      <div class="muted" style="margin-top:8px">
-        O player usa sempre o <em>Proxy</em> (já apontado para <code>/proxy</code>).
-      </div>
+      <div class="muted" style="margin-top:8px">O player usa sempre o Proxy (ja apontado para /proxy).</div>
     </aside>
 
     <main class="panel">
@@ -127,7 +118,7 @@
   </div>
 
   <script>
-    // ======= Login de App (overlay) =======
+    // ===== Login de App =====
     const loginOverlay = document.getElementById('loginOverlay');
     const authUser = document.getElementById('authUser');
     const authPass = document.getElementById('authPass');
@@ -141,203 +132,192 @@
     function showApp(){
       loginOverlay.hidden = true;
       appWrap.style.visibility = 'visible';
-      // auto: sincroniza proxy referer e entra no Xtream
       syncProxyBaseFromXtream();
       if (document.getElementById('xtAuto').checked) {
-        setTimeout(()=>loginXtream(), 200);
+        setTimeout(function(){ loginXtream(); }, 200);
       }
     }
 
     function doLogin(){
-      const u = authUser.value.trim(), p = authPass.value;
+      var u = authUser.value.trim(), p = authPass.value;
       if (u === APP_USER && p === APP_PASS){
         localStorage.setItem('app_login_ok','1');
         showApp();
       } else {
-        authErr.textContent = 'Credenciais inválidas.';
+        authErr.textContent = 'Credenciais invalidas.';
       }
     }
     authBtn.addEventListener('click', doLogin);
-    authPass.addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
+    authPass.addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
 
     (function initLogin(){
-      const ok = localStorage.getItem('app_login_ok') === '1';
+      var ok = localStorage.getItem('app_login_ok') === '1';
       if (ok) { showApp(); }
       else { loginOverlay.hidden = false; appWrap.style.visibility = 'hidden'; }
     })();
 
-    // ======= Resto da App (igual ao anterior, mas com auto Xtream) =======
-    const loadBtn = document.getElementById('loadBtn');
-    const fileInput = document.getElementById('fileInput');
-    const playlistUrlInput = document.getElementById('playlistUrl');
-    const channelList = document.getElementById('channelList');
-    const videoEl = document.getElementById('video');
-    const statusEl = document.getElementById('status');
-    const nowPlaying = document.getElementById('nowPlaying');
-    const openExternal = document.getElementById('openExternal');
-    const proxyBaseInp = document.getElementById('proxyBase');
-    const exportBtn = document.getElementById('exportBtn');
-    const testProxyBtn = document.getElementById('testProxyBtn');
-    const autoplayChk = document.getElementById('autoplay');
-    const startWithSoundChk = document.getElementById('startWithSound');
-    const muteBtn = document.getElementById('muteBtn');
-    const xtBaseInp = document.getElementById('xtBase');
-    const xtUserInp = document.getElementById('xtUser');
-    const xtPassInp = document.getElementById('xtPass');
-    const xtLoginBtn = document.getElementById('xtLoginBtn');
-    const xtRememberChk = document.getElementById('xtRemember');
-    const xtAutoChk = document.getElementById('xtAuto');
+    // ===== App =====
+    var loadBtn = document.getElementById('loadBtn');
+    var fileInput = document.getElementById('fileInput');
+    var playlistUrlInput = document.getElementById('playlistUrl');
+    var channelList = document.getElementById('channelList');
+    var videoEl = document.getElementById('video');
+    var statusEl = document.getElementById('status');
+    var nowPlaying = document.getElementById('nowPlaying');
+    var openExternal = document.getElementById('openExternal');
+    var proxyBaseInp = document.getElementById('proxyBase');
+    var exportBtn = document.getElementById('exportBtn');
+    var testProxyBtn = document.getElementById('testProxyBtn');
+    var autoplayChk = document.getElementById('autoplay');
+    var startWithSoundChk = document.getElementById('startWithSound');
+    var muteBtn = document.getElementById('muteBtn');
+    var xtBaseInp = document.getElementById('xtBase');
+    var xtUserInp = document.getElementById('xtUser');
+    var xtPassInp = document.getElementById('xtPass');
+    var xtLoginBtn = document.getElementById('xtLoginBtn');
+    var xtRememberChk = document.getElementById('xtRemember');
+    var xtAutoChk = document.getElementById('xtAuto');
 
-    let channels = [];
-    let hlsInstance = null;
+    var channels = [];
+    var hlsInstance = null;
 
     function syncProxyBaseFromXtream(){
-      const base = (xtBaseInp.value || '').trim().replace(/\/+$/,'');
+      var base = (xtBaseInp.value || '').trim().replace(/\/+$/,'');
       if (!base) return;
       try{
-        const u = new URL(base, base.startsWith('http') ? undefined : 'http://x/');
-        // origin já inclui a porta se for não padrão — não repetir
-        proxyBaseInp.value = `/proxy?ua=chrome&referer=${u.origin}&url=`;
-      }catch{}
+        var u = new URL(base, base.indexOf('http') === 0 ? undefined : 'http://x/');
+        proxyBaseInp.value = '/proxy?ua=chrome&referer=' + u.origin + '&url=';
+      }catch(e){}
     }
-
     xtBaseInp.addEventListener('change', syncProxyBaseFromXtream);
     xtBaseInp.addEventListener('blur', syncProxyBaseFromXtream);
 
-    exportBtn.addEventListener('click', ()=>{
-      if(!channels.length){ setStatus('Nada para exportar. Carrega uma playlist primeiro.'); return; }
-      const m3u = buildM3U(channels);
-      const blob = new Blob([m3u], {type:'audio/x-mpegurl'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+    exportBtn.addEventListener('click', function(){
+      if(!channels.length){ setStatus('Nada para exportar.'); return; }
+      var m3u = buildM3U(channels);
+      var blob = new Blob([m3u], {type:'audio/x-mpegurl'});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
       a.href = url; a.download = 'playlist-export.m3u';
       document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 1000);
-      setStatus(\`Exportados \${channels.length} canais para playlist-export.m3u\`);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      setStatus('Exportados ' + channels.length + ' canais para playlist-export.m3u');
     });
 
-    loadBtn.addEventListener('click', async () => {
-      const url = playlistUrlInput.value.trim();
+    loadBtn.addEventListener('click', function(){
+      var url = playlistUrlInput.value.trim();
       if (!url) return;
       setStatus('A carregar playlist (via proxy)…');
       channelList.innerHTML = '';
-      try {
-        const txt = await fetchTextViaProxy(url);
+      fetchTextViaProxy(url).then(function(txt){
         channels = parseM3U(txt);
         renderList(channels);
-        setStatus(\`Carregados \${channels.length} canais.\`);
-      } catch (err) {
+        setStatus('Carregados ' + channels.length + ' canais.');
+      }).catch(function(err){
         console.error(err);
         setStatus('Falha ao carregar a playlist (proxy/URL).');
-      }
+      });
     });
 
-    fileInput.addEventListener('change', async (ev)=>{
-      const f = ev.target.files && ev.target.files[0];
+    fileInput.addEventListener('change', function(ev){
+      var f = ev.target.files && ev.target.files[0];
       if(!f) return;
-      try{
-        const txt = await f.text();
+      f.text().then(function(txt){
         channels = parseM3U(txt);
         renderList(channels);
-        setStatus(\`Carregados \${channels.length} canais do ficheiro.\`);
-      }catch(e){
+        setStatus('Carregados ' + channels.length + ' canais do ficheiro.');
+      }).catch(function(e){
         console.error(e);
-        setStatus('Não foi possível ler o ficheiro.');
-      }
+        setStatus('Nao foi possivel ler o ficheiro.');
+      });
     });
 
-    testProxyBtn.addEventListener('click', async ()=>{
-      const base = proxyBaseInp.value.trim();
-      const testUrl = 'https://example.com/';
-      try{
-        const r = await fetch(base + encodeURIComponent(testUrl));
+    testProxyBtn.addEventListener('click', function(){
+      var base = proxyBaseInp.value.trim();
+      var testUrl = 'https://example.com/';
+      fetch(base + encodeURIComponent(testUrl)).then(function(r){
         if(!r.ok) throw new Error('HTTP '+r.status);
-        await r.text();
-        setStatus('✅ Proxy OK: recebeu resposta de example.com');
-      }catch(err){
-        console.error(err);
-        setStatus('❌ Proxy indisponível: ' + (err.message||err));
-      }
+        return r.text();
+      }).then(function(){ setStatus('OK: proxy respondeu.'); })
+        .catch(function(err){ setStatus('Proxy indisponivel: ' + (err.message||err)); });
     });
 
-    // ===== Xtream =====
     xtLoginBtn.addEventListener('click', loginXtream);
-    async function loginXtream(){
-      const base = (xtBaseInp.value || '').trim().replace(/\/+$/,'');
-      const user = (xtUserInp.value || '').trim();
-      const pass = (xtPassInp.value || '').trim();
+    function loginXtream(){
+      var base = (xtBaseInp.value || '').trim().replace(/\/+$/,'');
+      var user = (xtUserInp.value || '').trim();
+      var pass = (xtPassInp.value || '').trim();
       if (!base || !user || !pass){ setStatus('Preenche portal/username/password'); return; }
       setStatus('A entrar no portal Xtream…');
-      const api = \`\${base}/player_api.php\`;
-      const proxyBase = proxyBaseInp.value.trim();
-      try{
-        const catsUrl = \`\${api}?username=\${encodeURIComponent(user)}&password=\${encodeURIComponent(pass)}&action=get_live_categories\`;
-        const streamsUrl = \`\${api}?username=\${encodeURIComponent(user)}&password=\${encodeURIComponent(pass)}&action=get_live_streams\`;
-        const [cats, streams] = await Promise.all([proxiedJson(catsUrl, proxyBase), proxiedJson(streamsUrl, proxyBase)]);
-        const catMap = {}; if (Array.isArray(cats)) cats.forEach(c => { if (c && c.category_id) catMap[c.category_id] = c.category_name || ''; });
-        const makeUrl = (sid) => \`\${base}/live/\${user}/\${pass}/\${sid}.m3u8\`;
-        channels = (Array.isArray(streams) ? streams : []).map(s => ({
-          name: s?.name || \`#\${s?.stream_id}\`,
-          group: catMap[s?.category_id] || '',
-          logo: s?.stream_icon || '',
-          url: makeUrl(s?.stream_id)
-        }));
+      var api = base + '/player_api.php';
+      var proxyBase = proxyBaseInp.value.trim();
+      var catsUrl = api + '?username=' + encodeURIComponent(user) + '&password=' + encodeURIComponent(pass) + '&action=get_live_categories';
+      var streamsUrl = api + '?username=' + encodeURIComponent(user) + '&password=' + encodeURIComponent(pass) + '&action=get_live_streams';
+      Promise.all([proxiedJson(catsUrl, proxyBase), proxiedJson(streamsUrl, proxyBase)]).then(function(arr){
+        var cats = arr[0], streams = arr[1];
+        var catMap = {}; if (Array.isArray(cats)) cats.forEach(function(c){ if (c && c.category_id) catMap[c.category_id] = c.category_name || ''; });
+        function makeUrl(sid){ return base + '/live/' + user + '/' + pass + '/' + sid + '.m3u8'; }
+        channels = (Array.isArray(streams) ? streams : []).map(function(s){
+          return { name: (s && s.name) ? s.name : ('#' + s.stream_id), group: catMap[s.category_id] || '', logo: s.stream_icon || '', url: makeUrl(s.stream_id) };
+        });
         renderList(channels);
-        setStatus(\`Entrou. \${channels.length} canais.\`);
+        setStatus('Entrou. ' + channels.length + ' canais.');
         if (xtRememberChk.checked){
-          localStorage.setItem('xtream_cfg', JSON.stringify({ base, user, pass, auto: !!xtAutoChk.checked }));
+          localStorage.setItem('xtream_cfg', JSON.stringify({ base: base, user: user, pass: pass, auto: !!xtAutoChk.checked }));
         }
-      }catch(e){
+      }).catch(function(e){
         console.error(e);
-        setStatus('Falha no portal Xtream (auth/ligação). Verifica dados ou proxy.');
-      }
+        setStatus('Falha no portal Xtream (auth/ligacao). Verifica dados ou proxy.');
+      });
     }
 
-    async function proxiedJson(url, proxyBase){
-      const r = await fetch(proxyBase + encodeURIComponent(url));
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const txt = await r.text();
-      try { return JSON.parse(txt); } catch {
-        const i = txt.indexOf('{') !== -1 ? txt.indexOf('{') : txt.indexOf('[');
-        if (i >= 0) return JSON.parse(txt.slice(i));
-        throw new Error('Invalid JSON');
-      }
+    function proxiedJson(url, proxyBase){
+      return fetch(proxyBase + encodeURIComponent(url)).then(function(r){
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      }).then(function(txt){
+        try { return JSON.parse(txt); } catch(_){
+          var i = txt.indexOf('{') !== -1 ? txt.indexOf('{') : txt.indexOf('[');
+          if (i >= 0) return JSON.parse(txt.slice(i));
+          throw new Error('Invalid JSON');
+        }
+      });
     }
 
-    // Autoload guardado
     (function(){
       try{
-        const saved = JSON.parse(localStorage.getItem('xtream_cfg')||'null');
+        var saved = JSON.parse(localStorage.getItem('xtream_cfg')||'null');
         if (saved){
           if (saved.base) xtBaseInp.value = saved.base;
           if (saved.user) xtUserInp.value = saved.user;
           if (saved.pass) xtPassInp.value = saved.pass;
-          xtAutoChk.checked = saved.auto ?? true;
+          xtAutoChk.checked = saved.auto !== undefined ? !!saved.auto : true;
           xtRememberChk.checked = true;
         }
-      }catch{}
+      }catch(e){}
     })();
 
     function setStatus(msg){ statusEl.textContent = msg; }
 
-    async function fetchTextViaProxy(url){
-      const proxied = proxyBaseInp.value.trim() + encodeURIComponent(url);
-      const r = await fetch(proxied);
-      if (!r.ok) throw new Error(\`HTTP \${r.status}\`);
-      return await r.text();
+    function fetchTextViaProxy(url){
+      var proxied = proxyBaseInp.value.trim() + encodeURIComponent(url);
+      return fetch(proxied).then(function(r){
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      });
     }
 
     function parseM3U(text){
-      const lines = text.split(/\r?\n/);
-      const out = [];
-      let current = null;
-      for (let i=0;i<lines.length;i++){
-        const line = lines[i].trim();
+      var lines = text.split(/\r?\n/);
+      var out = [];
+      var current = null;
+      for (var i=0;i<lines.length;i++){
+        var line = lines[i].trim();
         if (!line) continue;
-        if (line.startsWith('#EXTINF')){
-          const name = line.split(',').slice(1).join(',').trim();
+        if (line.indexOf('#EXTINF') === 0){
+          var name = line.split(',').slice(1).join(',').trim();
           current = { name: name || 'Sem nome', url: '' };
-        } else if (current && !line.startsWith('#')){
+        } else if (current && line.charAt(0) !== '#'){
           current.url = line;
           out.push(current);
           current = null;
@@ -347,10 +327,11 @@
     }
 
     function buildM3U(items){
-      let out = '#EXTM3U\n';
-      for(const ch of items){
-        const name = (ch.name || 'Sem nome').replace(/\n/g,' ');
-        out += `#EXTINF:-1,${name}\n${ch.url}\n`;
+      var out = '#EXTM3U\n';
+      for(var i=0;i<items.length;i++){
+        var ch = items[i];
+        var name = (ch.name || 'Sem nome').replace(/\n/g,' ');
+        out += '#EXTINF:-1,' + name + '\n' + ch.url + '\n';
       }
       return out;
     }
@@ -360,11 +341,15 @@
         channelList.innerHTML = '<div class="muted" style="padding:10px">Sem resultados.</div>';
         return;
       }
-      channelList.innerHTML = items.map((c,idx)=>`
-        <div class="item" data-idx="${idx}">${escapeHtml(c.name)} <span class="muted">▶</span></div>`).join('');
-      channelList.querySelectorAll('.item').forEach(el => {
-        el.addEventListener('click', ()=>{
-          const idx = Number(el.getAttribute('data-idx'));
+      var html = '';
+      for (var i=0;i<items.length;i++){
+        var c = items[i];
+        html += '<div class="item" data-idx="'+i+'">'+escapeHtml(c.name)+' <span class="muted">&rsaquo;</span></div>';
+      }
+      channelList.innerHTML = html;
+      Array.prototype.forEach.call(channelList.querySelectorAll('.item'), function(el){
+        el.addEventListener('click', function(){
+          var idx = Number(el.getAttribute('data-idx'));
           if (startWithSoundChk && startWithSoundChk.checked) {
             videoEl.muted = false;
             muteBtn.textContent = 'Som ligado';
@@ -375,62 +360,65 @@
     }
 
     function playChannel(ch){
-      nowPlaying.textContent = `A reproduzir: ${ch.name}`;
+      nowPlaying.textContent = 'A reproduzir: ' + ch.name;
       openExternal.href = ch.url;
       playStreamURL(ch.url, proxyBaseInp.value.trim());
     }
 
     function destroyHls(){
       if (hlsInstance){
-        try{ hlsInstance.destroy(); }catch{}
+        try{ hlsInstance.destroy(); }catch(e){}
         hlsInstance = null;
       }
     }
 
-    async function playStreamURL(url, proxyBase){
+    function playStreamURL(url, proxyBase){
       destroyHls();
-      videoEl.onerror = () => {
-        const err = videoEl.error;
-        setStatus('Erro no <video>: ' + (err?.message || ('code '+err?.code || 'desconhecido')));
+      videoEl.onerror = function(){
+        var err = videoEl.error;
+        setStatus('Erro no <video>: ' + (err && (err.message || ('code '+err.code)) || 'desconhecido'));
       };
       if (/\.m3u8(\?|$)/i.test(url)){
-        if (window.Hls && Hls.isSupported()){
-          const hls = new Hls({ enableWorker:true, lowLatencyMode:true });
-          hls.on(Hls.Events.ERROR, (event, data) => {
-            setStatus(`HLS error: ${data.type} / ${data.details} (fatal=${data.fatal})`);
+        if (window.Hls && window.Hls.isSupported()){
+          var hls = new window.Hls({ enableWorker:true, lowLatencyMode:true });
+          hls.on(window.Hls.Events.ERROR, function(event, data){
+            setStatus('HLS error: ' + data.type + ' / ' + data.details + ' (fatal=' + data.fatal + ')');
           });
-          hls.loadSource(proxyBase + encodeURIComponent(url)); // já proxificado aqui
+          hls.loadSource(proxyBase + encodeURIComponent(url));
           hls.attachMedia(videoEl);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => { tryAutoplay(); });
+          hls.on(window.Hls.Events.MANIFEST_PARSED, function(){ tryAutoplay(); });
           hlsInstance = hls;
           setStatus('Reprodução HLS via proxy.');
         } else {
           videoEl.src = proxyBase + encodeURIComponent(url);
           setStatus('HLS nativo via proxy.');
-          videoEl.addEventListener('loadedmetadata', () => { tryAutoplay(); }, { once:true });
-          videoEl.play().catch(()=>{});
+          videoEl.addEventListener('loadedmetadata', function(){ tryAutoplay(); }, { once:true });
+          videoEl.play().catch(function(){});
         }
       } else {
         videoEl.src = proxyBase + encodeURIComponent(url);
         setStatus('Reprodução direta via proxy.');
-        videoEl.addEventListener('loadedmetadata', () => { tryAutoplay(); }, { once:true });
-        videoEl.play().catch(()=>{});
+        videoEl.addEventListener('loadedmetadata', function(){ tryAutoplay(); }, { once:true });
+        videoEl.play().catch(function(){});
       }
     }
 
     function tryAutoplay(){
       if (!autoplayChk || !autoplayChk.checked) return;
-      try { const p = videoEl.play(); if (p && typeof p.then==='function') p.catch(()=>{}); } catch {}
+      try {
+        var p = videoEl.play();
+        if (p && typeof p.then === 'function') { p.catch(function(){}); }
+      } catch (e) {}
     }
 
-    muteBtn.addEventListener('click', ()=>{
+    muteBtn.addEventListener('click', function(){
       videoEl.muted = !videoEl.muted;
       muteBtn.textContent = videoEl.muted ? 'Som desligado' : 'Som ligado';
       if (!videoEl.paused) return;
       tryAutoplay();
     });
 
-    function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;"); }
+    function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
   </script>
 </body>
 </html>

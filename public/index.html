@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IPTV Web Player (com proxy)</title>
-  <!-- favicon inline p/ evitar 404 -->
   <link rel="icon" href="data:;base64,=">
   <style>
     :root { --bg:#0b1220; --fg:#e6eefc; --muted:#a7b2c7; --card:#121a2b; --accent:#5aa2ff; }
@@ -13,7 +12,6 @@
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;background:var(--bg);color:var(--fg)}
     header{padding:16px;border-bottom:1px solid #1e2a41;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent)}
     h1{margin:0;font-size:18px}
-
     .wrap{display:grid;grid-template-columns:360px 1fr;gap:16px;min-height:calc(100vh - 64px)}
     .panel{background:var(--card);border:1px solid #1e2a41;border-radius:14px;padding:12px;margin:16px}
     label{display:block;font-size:12px;color:var(--muted);margin:4px 0}
@@ -31,23 +29,16 @@
     @media (max-width: 900px){ .wrap{grid-template-columns:1fr} .player{min-height:40vh} }
     .sep{height:1px;background:#1e2a41;margin:10px 0}
     .tip{font-size:12px;color:#a7b2c7}
-
-    /* Overlay de Login */
     .overlay{position:fixed;inset:0;background:rgba(3,6,16,.85);display:flex;align-items:center;justify-content:center;z-index:9999;}
     .login-card{width:min(420px, 92vw); background:var(--card); border:1px solid #1e2a41; border-radius:16px; padding:18px; box-shadow:0 10px 40px rgba(0,0,0,.5)}
     .login-card h2{margin:0 0 12px 0;font-size:18px}
-    .row{display:flex;gap:8px}
-    .row > *{flex:1}
     .err{color:#ffb3b3;font-size:12px;min-height:16px}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
-  <header>
-    <h1>IPTV Web Player (com proxy)</h1>
-  </header>
+  <header><h1>IPTV Web Player (com proxy)</h1></header>
 
-  <!-- Overlay de Login -->
   <div id="loginOverlay" class="overlay" hidden>
     <div class="login-card">
       <h2>Entrar</h2>
@@ -141,7 +132,8 @@
     }
 
     function doLogin(){
-      var u = authUser.value.trim(), p = authPass.value;
+      var u = (authUser.value || '').trim();
+      var p = (authPass.value || '').trim();
       if (u === APP_USER && p === APP_PASS){
         localStorage.setItem('app_login_ok','1');
         showApp();
@@ -183,7 +175,6 @@
     var channels = [];
     var hlsInstance = null;
 
-    // >>> Robust: não depende de variáveis ainda não inicializadas
     function syncProxyBaseFromXtream(){
       var inp = document.getElementById('xtBase');
       var proxyInp = document.getElementById('proxyBase');
@@ -195,10 +186,18 @@
         proxyInp.value = '/proxy?ua=chrome&referer=' + u.origin + '&url=';
       }catch(e){}
     }
-    // <<<
 
-    xtBaseInp.addEventListener('change', syncProxyBaseFromXtream);
-    xtBaseInp.addEventListener('blur', syncProxyBaseFromXtream);
+    // AIRBAG: se os canais já carregarem, fecha overlay
+    setInterval(function(){
+      try {
+        if (!loginOverlay.hidden && channelList && channelList.children && channelList.children.length > 0){
+          showApp();
+        }
+      } catch(e){}
+    }, 1000);
+
+    document.getElementById('xtBase').addEventListener('change', syncProxyBaseFromXtream);
+    document.getElementById('xtBase').addEventListener('blur', syncProxyBaseFromXtream);
 
     exportBtn.addEventListener('click', function(){
       if(!channels.length){ setStatus('Nada para exportar.'); return; }

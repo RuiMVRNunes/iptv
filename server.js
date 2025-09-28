@@ -1,6 +1,5 @@
 // server.js — Express + Static + /proxy (rewrites .m3u8) + Basic Auth + /health
 // Usa apenas com conteúdos a que tens direito.
-
 import http from 'http';
 import https from 'https';
 import express from 'express';

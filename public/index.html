@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IPTV Web Player (com proxy)</title>
+  <!-- favicon inline p/ evitar 404 -->
+  <link rel="icon" href="data:;base64,=">
   <style>
     :root { --bg:#0b1220; --fg:#e6eefc; --muted:#a7b2c7; --card:#121a2b; --accent:#5aa2ff; }
     *{box-sizing:border-box}
@@ -181,14 +183,20 @@
     var channels = [];
     var hlsInstance = null;
 
+    // >>> Robust: não depende de variáveis ainda não inicializadas
     function syncProxyBaseFromXtream(){
-      var base = (xtBaseInp.value || '').trim().replace(/\/+$/,'');
+      var inp = document.getElementById('xtBase');
+      var proxyInp = document.getElementById('proxyBase');
+      if (!inp || !proxyInp) return;
+      var base = (inp.value || '').trim().replace(/\/+$/,'');
       if (!base) return;
       try{
         var u = new URL(base, base.indexOf('http') === 0 ? undefined : 'http://x/');
-        proxyBaseInp.value = '/proxy?ua=chrome&referer=' + u.origin + '&url=';
+        proxyInp.value = '/proxy?ua=chrome&referer=' + u.origin + '&url=';
       }catch(e){}
     }
+    // <<<
+
     xtBaseInp.addEventListener('change', syncProxyBaseFromXtream);
     xtBaseInp.addEventListener('blur', syncProxyBaseFromXtream);
 

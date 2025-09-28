@@ -111,7 +111,6 @@
   </div>
 
   <script>
-    // ===== Login de App =====
     const loginOverlay = document.getElementById('loginOverlay');
     const authUser = document.getElementById('authUser');
     const authPass = document.getElementById('authPass');
@@ -123,7 +122,7 @@
     const APP_PASS = 'Qwerty86!';
 
     function showApp(){
-      loginOverlay.hidden = true;
+      try { loginOverlay.remove(); } catch(e) { loginOverlay.hidden = true; }
       appWrap.style.visibility = 'visible';
       syncProxyBaseFromXtream();
       if (document.getElementById('xtAuto').checked) {
@@ -150,7 +149,6 @@
       else { loginOverlay.hidden = false; appWrap.style.visibility = 'hidden'; }
     })();
 
-    // ===== App =====
     var loadBtn = document.getElementById('loadBtn');
     var fileInput = document.getElementById('fileInput');
     var playlistUrlInput = document.getElementById('playlistUrl');
@@ -187,10 +185,11 @@
       }catch(e){}
     }
 
-    // AIRBAG: se os canais já carregarem, fecha overlay
     setInterval(function(){
       try {
-        if (!loginOverlay.hidden && channelList && channelList.children && channelList.children.length > 0){
+        if (!document.getElementById('loginOverlay') && channelList && channelList.children && channelList.children.length > 0){
+          // already removed overlay, nothing to do
+        } else if (channelList && channelList.children && channelList.children.length > 0){
           showApp();
         }
       } catch(e){}

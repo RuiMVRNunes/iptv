@@ -300,7 +300,7 @@ function waitUntilReady(indexPath, timeoutMs=10000){
 }
 
 function startJob(srcUrl, mode='remux', opts={}){
-  const vbr = opts.vbr || '2500k';
+  const vbr = opts.vbr || '3500k';
   const abr = opts.abr || '128k';
   const id = idFor(srcUrl, mode, vbr, abr);
   const dir = path.join(compatRoot, id);

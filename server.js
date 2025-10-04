@@ -1,4 +1,4 @@
-// server.js — v3.1
+// server.js — v3.2 (FFmpeg compat mode)
 import http from 'http';
 import https from 'https';
 import express from 'express';
@@ -6,7 +6,12 @@ import compression from 'compression';
 import { pipeline } from 'stream';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
+import ffmpegPathPkg from 'ffmpeg-static';
+
+const ffmpegPath = process.env.FFMPEG_PATH || ffmpegPathPkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -161,7 +166,7 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
           if (/#EXT-X-STREAM-INF/i.test(text)) {
             const lines = text.split(/\r?\n/);
             const headerLines = [];
-            const variants = []; // {info, url, bw, codecs}
+            const variants = [];
 
             for (let i = 0; i < lines.length; i++) {
               const L = lines[i];
@@ -254,6 +259,102 @@ app.get('/proxy', (req, res) => {
   } catch {}
   proxyOnce(raw, req, res, 0);
 });
+
+// FFmpeg compat mode
+const jobs = new Map();
+const compatRoot = '/tmp/compat';
+fs.mkdirSync(compatRoot, { recursive: true });
+
+function idFor(urlStr, mode, vbr, abr){
+  const h = crypto.createHash('sha1').update([urlStr, mode||'', vbr||'', abr||''].join('|')).digest('base64url');
+  return h.slice(0, 24);
+}
+
+function startJob(srcUrl, mode='remux', opts={}){
+  const vbr = opts.vbr || '2500k';
+  const abr = opts.abr || '128k';
+  const id = idFor(srcUrl, mode, vbr, abr);
+  const dir = path.join(compatRoot, id);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const commonIn = [
+    '-loglevel','warning',
+    '-rw_timeout','15000000',
+    '-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','2'
+  ];
+  if (opts.ua) { commonIn.push('-user_agent', String(opts.ua)); }
+  if (opts.referer || opts.origin){
+    let hdr = '';
+    if (opts.referer) hdr += `Referer: ${opts.referer}\r\n`;
+    if (opts.origin)  hdr += `Origin: ${opts.origin}\r\n`;
+    commonIn.push('-headers', hdr);
+  }
+
+  const mapOut = ['-map','0:v:0?','-map','0:a:0?'];
+
+  const outArgs = ['-f','hls','-hls_time','4','-hls_list_size','6','-hls_flags','delete_segments+omit_endlist',
+                   '-hls_segment_filename', path.join(dir, 'seg-%06d.ts'), path.join(dir, 'index.m3u8')];
+
+  let codecArgs;
+  if (mode === 'remux'){
+    codecArgs = ['-c:v','copy','-c:a','aac','-ac','2','-b:a', abr];
+  } else {
+    codecArgs = ['-c:v','libx264','-preset','veryfast','-tune','zerolatency','-profile:v','high','-level','4.1',
+                 '-b:v', vbr, '-maxrate', vbr, '-bufsize', '2M', '-c:a','aac','-ac','2','-b:a', abr];
+  }
+
+  const args = [...commonIn, '-i', srcUrl, ...mapOut, ...codecArgs, ...outArgs];
+
+  const proc = spawn(ffmpegPath, args, { stdio: ['ignore','pipe','pipe'] });
+  proc.stdout.on('data', () => {});
+  proc.stderr.on('data', () => {});
+  proc.on('exit', () => {});
+
+  const job = { id, dir, proc, last: Date.now(), mode, vbr, abr, srcUrl };
+  jobs.set(id, job);
+  return job;
+}
+
+function touchJob(id){ const j = jobs.get(id); if (j) j.last = Date.now(); }
+
+app.use('/compat', (req, res, next) => {
+  const m = req.path.match(/^\/([^/]+)/);
+  if (m) touchJob(m[1]);
+  next();
+}, express.static(compatRoot, { maxAge: 0 }));
+
+app.get('/start-compat', (req, res) => {
+  const raw = String(req.query.url || '');
+  if (!raw) return res.status(400).json({ error:'missing url' });
+  const mode = (String(req.query.mode || 'remux').toLowerCase() === 'transcode') ? 'transcode' : 'remux';
+  const vbr = String(req.query.vbr || '2500k');
+  const abr = String(req.query.abr || '128k');
+  const ua = pickUA(req);
+  const referer = String(req.query.referer || '');
+  const origin = String(req.query.origin || '');
+
+  const id = idFor(raw, mode, vbr, abr);
+  let job = jobs.get(id);
+  if (!job || job.proc.exitCode !== null){
+    job = startJob(raw, mode, { vbr, abr, ua, referer, origin });
+  } else {
+    touchJob(id);
+  }
+  const play = `/compat/${job.id}/index.m3u8`;
+  res.json({ id: job.id, mode: job.mode, play });
+});
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, job] of jobs){
+    const idleMs = now - (job.last || 0);
+    if (idleMs > 10*60*1000){
+      try { job.proc.kill('SIGTERM'); } catch {}
+      try { fs.rmSync(job.dir, { recursive: true, force: true }); } catch {}
+      jobs.delete(id);
+    }
+  }
+}, 60*1000);
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log('Server listening on http://0.0.0.0:' + PORT));

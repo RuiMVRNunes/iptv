@@ -89,9 +89,19 @@
         <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="xtAuto" type="checkbox" checked> Auto carregar</label>
       </div>
 
+      <div class="sep"></div>
+      <div class="controls">
+        <select id="dataSaver" class="btn secondary" title="Limita bitrate no proxy (master m3u8)">
+          <option value="">Poupança: desligada</option>
+          <option value="800">Poupança ~800 kbps</option>
+          <option value="1200" selected>Poupança ~1.2 Mbps</option>
+          <option value="force_lowest">Forçar mais baixo</option>
+        </select>
+      </div>
+
       <div class="list" id="channelList"></div>
       <div class="muted" id="status" style="margin-top:8px"></div>
-      <div class="muted" style="margin-top:8px">O player usa sempre o Proxy (ja apontado para /proxy).</div>
+      <div class="muted" style="margin-top:8px">O player usa sempre o Proxy (já com poupança configurável).</div>
     </aside>
 
     <main class="panel">
@@ -100,6 +110,7 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="autoplay" type="checkbox" checked> Autoplay</label>
           <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="startWithSound" type="checkbox"> Som ao iniciar (no clique)</label>
+          <select id="qualitySel" class="btn secondary"><option value="-1">Qualidade: Auto</option></select>
           <button id="muteBtn" class="btn secondary">Som desligado</button>
           <a id="openExternal" href="#" target="_blank" rel="noopener"><button class="btn secondary">Abrir no VLC</button></a>
         </div>
@@ -169,6 +180,8 @@
     var xtLoginBtn = document.getElementById('xtLoginBtn');
     var xtRememberChk = document.getElementById('xtRemember');
     var xtAutoChk = document.getElementById('xtAuto');
+    var dataSaverSel = document.getElementById('dataSaver');
+    var qualitySel   = document.getElementById('qualitySel');
 
     var channels = [];
     var hlsInstance = null;
@@ -181,16 +194,21 @@
       if (!base) return;
       try{
         var u = new URL(base, base.indexOf('http') === 0 ? undefined : 'http://x/');
-        proxyInp.value = '/proxy?ua=chrome&referer=' + u.origin + '&url=';
+        var left = '/proxy?ua=chrome&referer=' + u.origin;
+        var ds = (dataSaverSel && dataSaverSel.value) || '';
+        if (ds === 'force_lowest') left += '&force_lowest=1';
+        else if (ds && /^\d+$/.test(ds)) left += '&cap_kbps=' + ds;
+        proxyInp.value = left + '&url=';
       }catch(e){}
     }
 
+    function applyDataSaver(){ syncProxyBaseFromXtream(); }
+    dataSaverSel.addEventListener('change', applyDataSaver);
+
     setInterval(function(){
       try {
-        if (!document.getElementById('loginOverlay') && channelList && channelList.children && channelList.children.length > 0){
-          // already removed overlay, nothing to do
-        } else if (channelList && channelList.children && channelList.children.length > 0){
-          showApp();
+        if (channelList && channelList.children && channelList.children.length > 0){
+          if (document.getElementById('loginOverlay')) showApp();
         }
       } catch(e){}
     }, 1000);
@@ -301,6 +319,7 @@
           xtRememberChk.checked = true;
         }
       }catch(e){}
+      applyDataSaver();
     })();
 
     function setStatus(msg){ statusEl.textContent = msg; }
@@ -386,13 +405,31 @@
       };
       if (/\.m3u8(\?|$)/i.test(url)){
         if (window.Hls && window.Hls.isSupported()){
-          var hls = new window.Hls({ enableWorker:true, lowLatencyMode:true });
+          var hls = new window.Hls({
+            enableWorker:true,
+            lowLatencyMode:true,
+            capLevelToPlayerSize:true,
+            maxBufferLength:10,
+            backBufferLength:10,
+            liveSyncDurationCount:2
+          });
           hls.on(window.Hls.Events.ERROR, function(event, data){
             setStatus('HLS error: ' + data.type + ' / ' + data.details + ' (fatal=' + data.fatal + ')');
           });
           hls.loadSource(proxyBase + encodeURIComponent(url));
           hls.attachMedia(videoEl);
-          hls.on(window.Hls.Events.MANIFEST_PARSED, function(){ tryAutoplay(); });
+          hls.on(window.Hls.Events.MANIFEST_PARSED, function(){
+            tryAutoplay();
+            if (qualitySel && hls.levels && hls.levels.length){
+              qualitySel.innerHTML = '<option value="-1">Qualidade: Auto</option>' +
+                hls.levels.map(function(lv,i){
+                  var h = lv.height || '?';
+                  var kbps = lv.bitrate ? Math.round(lv.bitrate/1000) : '?';
+                  return '<option value="'+i+'">'+h+'p ~'+kbps+'kbps</option>';
+                }).join('');
+              qualitySel.onchange = function(){ hls.currentLevel = parseInt(qualitySel.value,10); };
+            }
+          });
           hlsInstance = hls;
           setStatus('Reprodução HLS via proxy.');
         } else {
@@ -416,6 +453,11 @@
         if (p && typeof p.then === 'function') { p.catch(function(){}); }
       } catch (e) {}
     }
+
+    document.addEventListener('visibilitychange', function(){
+      if (document.hidden) { try { videoEl.pause(); } catch(e){} }
+      else { tryAutoplay(); }
+    });
 
     muteBtn.addEventListener('click', function(){
       videoEl.muted = !videoEl.muted;

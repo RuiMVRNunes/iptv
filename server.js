@@ -1,4 +1,4 @@
-// server.js — v3.2.1 (FFmpeg compat mode; wait-ready + better errors)
+// server.js — v3.3 (FFmpeg compat: async start + status polling + longer wait + stderr tail)
 import http from 'http';
 import https from 'https';
 import express from 'express';
@@ -105,7 +105,7 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
     port: target.port || (isHttps ? 443 : 80),
     path: target.pathname + target.search,
     method: 'GET',
-    headers, timeout: 15000,
+    headers, timeout: 20000,
     agent: new (isHttps ? https.Agent : http.Agent)({ keepAlive: false }),
   };
 
@@ -151,7 +151,6 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
         try {
           const text = Buffer.concat(chunks).toString('utf8');
 
-          // Params
           const baseQS = new URLSearchParams();
           const ua = String(req.query.ua || '');
           if (ua) baseQS.set('ua', ua);
@@ -173,10 +172,9 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
           let outText = text;
 
           if (/#EXT-X-STREAM-INF/i.test(text)) {
-            // Parse master variants
             const lines = text.split(/\r?\n/);
             const headerLines = [];
-            const variants = []; // {info, url, bw, codecs}
+            const variants = [];
 
             for (let i = 0; i < lines.length; i++) {
               const L = lines[i];
@@ -196,7 +194,6 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
               if (!L || L.startsWith('#')) headerLines.push(L);
             }
 
-            // Filters
             const capKbps = parseInt(String(req.query.cap_kbps || ''), 10);
             const forceLowest = String(req.query.force_lowest || '') === '1';
             const avoidList = String(req.query.avoid_codecs || '').toLowerCase().split(',').map(s=>s.trim()).filter(Boolean);
@@ -204,11 +201,12 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
 
             let pool = variants.slice();
 
-            if (avoidList.length) { pool = pool.filter(v => !avoidList.some(a => v.codecs.includes(a))); }
+            if (avoidList.length) pool = pool.filter(v => !avoidList.some(a => v.codecs.includes(a)));
             if (preferList.length && pool.length) {
               const preferred = pool.filter(v => preferList.some(p => v.codecs.includes(p)));
               if (preferred.length) pool = preferred;
             }
+
             if (forceLowest && pool.length) {
               pool = [ pool.reduce((a,b)=> (a.bw||1e12) <= (b.bw||1e12) ? a : b) ];
             } else if (!isNaN(capKbps) && capKbps > 0 && pool.length) {
@@ -220,7 +218,6 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
             const body = (pool.length ? pool : variants).map(g => `${g.info}\n${toProxy(g.url)}`).join('\n');
             outText = headerLines.join('\n') + '\n' + body + '\n';
           } else {
-            // Media playlist
             outText = text.split(/\r?\n/).map(line => {
               const t = line.trim();
               if (!t || t.startsWith('#')) return line;
@@ -240,7 +237,6 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
       return;
     }
 
-    // Conteúdo não-m3u8 → pipe direto
     delete headersToSend['content-encoding'];
     if (!res.headersSent) res.writeHead(status || 200, headersToSend);
     pipeline(up, res, (err) => {
@@ -269,8 +265,8 @@ app.get('/proxy', (req, res) => {
   proxyOnce(raw, req, res, 0);
 });
 
-// ---------------- FFmpeg compat mode ----------------
-const jobs = new Map(); // id -> { proc, dir, last, failed }
+// ---------------- FFmpeg compat mode (async) ----------------
+const jobs = new Map(); // id -> { proc, dir, last, failed, stderrTail }
 const compatRoot = '/tmp/compat';
 fs.mkdirSync(compatRoot, { recursive: true });
 
@@ -278,29 +274,21 @@ function idFor(urlStr, mode, vbr, abr){
   const h = crypto.createHash('sha1').update([urlStr, mode||'', vbr||'', abr||''].join('|')).digest('base64url');
   return h.slice(0, 24);
 }
-
+function tailAppend(job, chunk){
+  if (!job.stderrTail) job.stderrTail = '';
+  job.stderrTail += chunk.toString('utf8');
+  if (job.stderrTail.length > 4000) job.stderrTail = job.stderrTail.slice(-4000);
+}
 function fileReady(p){
   try {
     if (!fs.existsSync(p)) return false;
     const txt = fs.readFileSync(p, 'utf8');
-    return txt.includes('#EXTINF'); // at least one segment
+    return txt.includes('#EXTINF');
   } catch { return false; }
 }
 
-function waitUntilReady(indexPath, timeoutMs=10000){
-  return new Promise((resolve) => {
-    const t0 = Date.now();
-    const timer = setInterval(() => {
-      if (fileReady(indexPath) || (Date.now()-t0) > timeoutMs){
-        clearInterval(timer);
-        resolve(fileReady(indexPath));
-      }
-    }, 300);
-  });
-}
-
 function startJob(srcUrl, mode='remux', opts={}){
-  const vbr = opts.vbr || '3500k';
+  const vbr = opts.vbr || '2500k';
   const abr = opts.abr || '128k';
   const id = idFor(srcUrl, mode, vbr, abr);
   const dir = path.join(compatRoot, id);
@@ -308,10 +296,10 @@ function startJob(srcUrl, mode='remux', opts={}){
 
   const commonIn = [
     '-loglevel','warning',
-    '-rw_timeout','15000000',
-    '-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','2'
+    '-rw_timeout','25000000',
+    '-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','2',
+    '-protocol_whitelist','file,http,https,tcp,tls,crypto'
   ];
-
   if (opts.ua) { commonIn.push('-user_agent', String(opts.ua)); }
   if (opts.referer || opts.origin){
     let hdr = '';
@@ -335,21 +323,22 @@ function startJob(srcUrl, mode='remux', opts={}){
 
   const args = [...commonIn, '-i', srcUrl, ...mapOut, ...codecArgs, ...outArgs];
 
-  const proc = spawn(ffmpegPath, args, { stdio: ['ignore','pipe','pipe'] });
-  const job = { id, dir, proc, last: Date.now(), mode, vbr, abr, srcUrl, failed:false };
+  const proc = spawn(ffmpegPath, args, { stdio: ['ignore','ignore','pipe'] });
+  const job = { id, dir, proc, last: Date.now(), mode, vbr, abr, srcUrl, failed:false, stderrTail:'' };
 
-  proc.on('error', (err) => { job.failed = true; });
-  proc.stdout.on('data', () => {});
-  proc.stderr.on('data', () => {});
-  proc.on('exit', (code) => {
-    if (code && code !== 0) job.failed = true;
-  });
+  proc.on('error', (err) => { job.failed = true; tailAppend(job, String(err)); });
+  proc.stderr.on('data', (d) => { tailAppend(job, d); });
+  proc.on('exit', (code) => { if (code && code !== 0) job.failed = true; });
 
   jobs.set(id, job);
   return job;
 }
 
 function touchJob(id){ const j = jobs.get(id); if (j) j.last = Date.now(); }
+function statusFor(job){
+  const index = path.join(job.dir, 'index.m3u8');
+  return { ready: fileReady(index), failed: !!job.failed, mode: job.mode, play: `/compat/${job.id}/index.m3u8`, stderr_tail: job.stderrTail || '' };
+}
 
 // Serve compat files and update last-access
 app.use('/compat', (req, res, next) => {
@@ -358,8 +347,7 @@ app.use('/compat', (req, res, next) => {
   next();
 }, express.static(compatRoot, { maxAge: 0 }));
 
-// Endpoint to start (or reuse) a job, returns the play URL
-app.get('/start-compat', async (req, res) => {
+app.get('/start-compat', (req, res) => {
   if (!ffmpegPath) return res.status(500).json({ error:'ffmpeg binary not found' });
 
   const raw = String(req.query.url || '');
@@ -367,8 +355,6 @@ app.get('/start-compat', async (req, res) => {
   const mode = (String(req.query.mode || 'remux').toLowerCase() === 'transcode') ? 'transcode' : 'remux';
   const vbr = String(req.query.vbr || '2500k');
   const abr = String(req.query.abr || '128k');
-  const wait = String(req.query.wait || '1') === '1';
-  const autoFallback = String(req.query.auto_fallback || '1') === '1';
   const ua = pickUA(req);
   const referer = String(req.query.referer || '');
   const origin = String(req.query.origin || '');
@@ -380,28 +366,14 @@ app.get('/start-compat', async (req, res) => {
   } else {
     touchJob(id);
   }
+  res.json({ id: job.id, ...statusFor(job) });
+});
 
-  const play = `/compat/${job.id}/index.m3u8`;
-  const indexPath = path.join(compatRoot, job.id, 'index.m3u8');
-
-  if (wait){
-    const ok = await waitUntilReady(indexPath, 12000);
-    if (!ok){
-      if (autoFallback && mode === 'remux'){
-        // try transcode
-        const trans = startJob(raw, 'transcode', { vbr, abr, ua, referer, origin });
-        const tPlay = `/compat/${trans.id}/index.m3u8`;
-        const tIndex = path.join(compatRoot, trans.id, 'index.m3u8');
-        const tOk = await waitUntilReady(tIndex, 15000);
-        if (!tOk) return res.status(502).json({ error:'compat not ready', detail:'transcode failed to start in time' });
-        return res.json({ id: trans.id, mode: 'transcode', play: tPlay });
-      }
-      return res.status(502).json({ error:'compat not ready' });
-    }
-  }
-
-  if (job.failed) return res.status(500).json({ error:'ffmpeg failed to start' });
-  return res.json({ id: job.id, mode: job.mode, play });
+app.get('/compat-status', (req, res) => {
+  const id = String(req.query.id || '');
+  if (!id || !jobs.has(id)) return res.status(404).json({ error:'not found' });
+  const st = statusFor(jobs.get(id));
+  res.json(st);
 });
 
 // Cleanup loop

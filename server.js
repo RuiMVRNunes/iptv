@@ -1,8 +1,8 @@
-// server.js — Express + Static + /proxy (rewrites .m3u8) + Basic Auth + /health
-// Usa apenas com conteúdos a que tens direito.
+// server.js — Express + Static + /proxy (rewrites .m3u8) + Basic Auth + compression + /health
 import http from 'http';
 import https from 'https';
 import express from 'express';
+import compression from 'compression';
 import { pipeline } from 'stream';
 import path from 'path';
 import fs from 'fs';
@@ -13,11 +13,8 @@ const __dirname  = path.dirname(__filename);
 const app = express();
 
 app.set('trust proxy', true);
-
-// ---------- Health aberto ----------
 app.get('/health', (_, res) => res.type('text').send('ok'));
 
-// ---------- CORS + noindex ----------
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
@@ -27,7 +24,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// ---------- Basic Auth (repo privado ≠ app privada) ----------
+app.use(compression({
+  filter: (req, res) => {
+    const t = String(res.getHeader('Content-Type') || '').toLowerCase();
+    return /text|json|javascript|xml|mpegurl/.test(t);
+  }
+}));
+
 const BASIC_USER = process.env.BASIC_AUTH_USER || 'rui';
 const BASIC_PASS = process.env.BASIC_AUTH_PASS || 'Qwerty86!';
 app.use((req, res, next) => {
@@ -42,7 +45,6 @@ app.use((req, res, next) => {
   return res.status(401).send('Auth required');
 });
 
-// ---------- Static frontend ----------
 const pubDir = path.join(__dirname, 'public');
 app.use(express.static(pubDir, { index: 'index.html', maxAge: '1h' }));
 app.get('/', (req, res) => {
@@ -51,7 +53,6 @@ app.get('/', (req, res) => {
   return res.status(200).type('text').send('Frontend missing (public/index.html). Proxy at /proxy');
 });
 
-// ---------- Utils ----------
 const UAS = {
   chrome: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
   vlc:    'VLC/3.0.20 LibVLC/3.0.20',
@@ -66,7 +67,6 @@ const isM3U8 = (urlObj, headers) => {
          ct.includes('application/x-mpegurl');
 };
 
-// ---------- Core proxy (segue redirects + reescreve .m3u8) ----------
 function proxyOnce(targetUrl, req, res, hop = 0) {
   if (hop > 5) return !res.headersSent && res.status(508).send('Too many redirects');
 
@@ -79,7 +79,7 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
   const headers = {
     'User-Agent': pickUA(req),
     'Accept': req.headers['accept'] || '*/*',
-    'Accept-Encoding': 'identity',   // facilita reescrita
+    'Accept-Encoding': 'identity',
     'Connection': 'close',
     'Host': (req.query.host || target.host),
   };
@@ -101,14 +101,12 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
   const upstreamReq = lib.request(options, (up) => {
     const status = up.statusCode || 0;
 
-    // Redirect?
     if ([301,302,303,307,308].includes(status)) {
       const loc = up.headers.location; up.resume();
       if (!loc) return !res.headersSent && res.status(502).send('redirect without Location');
       return proxyOnce(new URL(loc, target).toString(), req, res, hop + 1);
     }
 
-    // Inspect (debug): ?inspect=1
     if (String(req.query.inspect) === '1') {
       const chunks = [];
       up.on('data', d => { if (chunks.length < 64) chunks.push(d); });
@@ -139,26 +137,71 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
       up.on('end', () => {
         try {
           const text = Buffer.concat(chunks).toString('utf8');
-
-          // Propaga ua/referer/origin para os segmentos; força host de cada segmento
           const baseQS = new URLSearchParams();
           const ua = String(req.query.ua || '');
           if (ua) baseQS.set('ua', ua);
           if (req.query.referer) baseQS.set('referer', String(req.query.referer));
           if (req.query.origin)  baseQS.set('origin',  String(req.query.origin));
+          if (req.query.cap_kbps)     baseQS.set('cap_kbps', String(req.query.cap_kbps));
+          if (req.query.force_lowest) baseQS.set('force_lowest', '1');
 
-          const proxied = text.split(/\r?\n/).map(line => {
-            const t = line.trim();
-            if (!t || t.startsWith('#')) return line;
-            const abs = new URL(t, target).toString();
+          const toProxy = (absUrl) => {
+            const u = new URL(absUrl);
             const qs = new URLSearchParams(baseQS.toString());
-            qs.set('host', new URL(abs).host);
-            qs.set('url', abs);
+            qs.set('host', u.host);
+            qs.set('url', u.toString());
             return `/proxy?${qs.toString()}`;
-          }).join('\n');
+          };
+
+          let outText = text;
+
+          if (/#EXT-X-STREAM-INF/i.test(text)) {
+            const capKbps = parseInt(String(req.query.cap_kbps || ''), 10);
+            const forceLowest = String(req.query.force_lowest || '') === '1';
+
+            const lines = text.split(/\r?\n/);
+            const headerLines = [];
+            const variants = [];
+
+            for (let i = 0; i < lines.length; i++) {
+              const L = lines[i];
+              if (/^#EXT-X-STREAM-INF:/i.test(L)) {
+                const urlLine = lines[i+1] && lines[i+1].trim();
+                if (urlLine && !urlLine.startsWith('#')) {
+                  const abs = new URL(urlLine, target).toString();
+                  const bwMatch = /BANDWIDTH=(\d+)/i.exec(L);
+                  const bw = bwMatch ? parseInt(bwMatch[1],10) : undefined;
+                  variants.push({ info: L, url: abs, bw });
+                  i++; // saltar a linha do URL
+                  continue;
+                }
+              }
+              if (!L || L.startsWith('#')) headerLines.push(L);
+            }
+
+            let chosen = variants;
+            if (forceLowest && variants.length) {
+              chosen = [ variants.reduce((a,b)=> (a.bw||1e12) <= (b.bw||1e12) ? a : b) ];
+            } else if (!isNaN(capKbps) && capKbps > 0) {
+              const cap = capKbps * 1000;
+              const fit = variants.filter(v => (v.bw||Infinity) <= cap);
+              if (fit.length) chosen = fit;
+              else chosen = [ variants.reduce((a,b)=> (a.bw||1e12) <= (b.bw||1e12) ? a : b) ];
+            }
+
+            const body = chosen.map(g => `${g.info}\n${toProxy(g.url)}`).join('\n');
+            outText = headerLines.join('\n') + '\n' + body + '\n';
+          } else {
+            outText = text.split(/\r?\n/).map(line => {
+              const t = line.trim();
+              if (!t || t.startsWith('#')) return line;
+              const abs = new URL(t, target).toString();
+              return toProxy(abs);
+            }).join('\n');
+          }
 
           if (!res.headersSent) res.writeHead(status || 200, headersToSend);
-          res.end(proxied);
+          res.end(outText);
         } catch (e) {
           if (!res.headersSent) res.status(502).end('rewrite error: ' + e.message);
           else res.end();
@@ -181,15 +224,11 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
   upstreamReq.end();
 }
 
-// robots.txt
 app.get('/robots.txt', (req, res) => res.type('text').send('User-agent: *\nDisallow: /\n'));
 
-// ---------- /proxy ----------
 app.get('/proxy', (req, res) => {
   const raw = String(req.query.url || '');
   if (!raw) return res.status(400).send('missing url');
-
-  // anti-loop
   try {
     const host = (req.headers.host || '').split(',')[0].trim();
     const t = new URL(raw);
@@ -197,7 +236,6 @@ app.get('/proxy', (req, res) => {
       return res.status(400).send('recursive proxy blocked');
     }
   } catch {}
-
   proxyOnce(raw, req, res, 0);
 });
 

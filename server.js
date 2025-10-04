@@ -1,4 +1,4 @@
-// server.js — Express + Static + /proxy (rewrites .m3u8) + Basic Auth + compression + /health
+// server.js — v3.1
 import http from 'http';
 import https from 'https';
 import express from 'express';
@@ -137,6 +137,7 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
       up.on('end', () => {
         try {
           const text = Buffer.concat(chunks).toString('utf8');
+
           const baseQS = new URLSearchParams();
           const ua = String(req.query.ua || '');
           if (ua) baseQS.set('ua', ua);
@@ -144,6 +145,8 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
           if (req.query.origin)  baseQS.set('origin',  String(req.query.origin));
           if (req.query.cap_kbps)     baseQS.set('cap_kbps', String(req.query.cap_kbps));
           if (req.query.force_lowest) baseQS.set('force_lowest', '1');
+          if (req.query.avoid_codecs) baseQS.set('avoid_codecs', String(req.query.avoid_codecs));
+          if (req.query.prefer_codecs) baseQS.set('prefer_codecs', String(req.query.prefer_codecs));
 
           const toProxy = (absUrl) => {
             const u = new URL(absUrl);
@@ -156,12 +159,9 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
           let outText = text;
 
           if (/#EXT-X-STREAM-INF/i.test(text)) {
-            const capKbps = parseInt(String(req.query.cap_kbps || ''), 10);
-            const forceLowest = String(req.query.force_lowest || '') === '1';
-
             const lines = text.split(/\r?\n/);
             const headerLines = [];
-            const variants = [];
+            const variants = []; // {info, url, bw, codecs}
 
             for (let i = 0; i < lines.length; i++) {
               const L = lines[i];
@@ -171,25 +171,41 @@ function proxyOnce(targetUrl, req, res, hop = 0) {
                   const abs = new URL(urlLine, target).toString();
                   const bwMatch = /BANDWIDTH=(\d+)/i.exec(L);
                   const bw = bwMatch ? parseInt(bwMatch[1],10) : undefined;
-                  variants.push({ info: L, url: abs, bw });
-                  i++; // saltar a linha do URL
+                  const cm = /CODECS="([^"]+)"/i.exec(L);
+                  const codecs = cm ? cm[1].toLowerCase() : '';
+                  variants.push({ info: L, url: abs, bw, codecs });
+                  i++;
                   continue;
                 }
               }
               if (!L || L.startsWith('#')) headerLines.push(L);
             }
 
-            let chosen = variants;
-            if (forceLowest && variants.length) {
-              chosen = [ variants.reduce((a,b)=> (a.bw||1e12) <= (b.bw||1e12) ? a : b) ];
-            } else if (!isNaN(capKbps) && capKbps > 0) {
-              const cap = capKbps * 1000;
-              const fit = variants.filter(v => (v.bw||Infinity) <= cap);
-              if (fit.length) chosen = fit;
-              else chosen = [ variants.reduce((a,b)=> (a.bw||1e12) <= (b.bw||1e12) ? a : b) ];
+            const capKbps = parseInt(String(req.query.cap_kbps || ''), 10);
+            const forceLowest = String(req.query.force_lowest || '') === '1';
+            const avoidList = String(req.query.avoid_codecs || '').toLowerCase().split(',').map(s=>s.trim()).filter(Boolean);
+            const preferList = String(req.query.prefer_codecs || '').toLowerCase().split(',').map(s=>s.trim()).filter(Boolean);
+
+            let pool = variants.slice();
+
+            if (avoidList.length) {
+              pool = pool.filter(v => !avoidList.some(a => v.codecs.includes(a)));
             }
 
-            const body = chosen.map(g => `${g.info}\n${toProxy(g.url)}`).join('\n');
+            if (preferList.length && pool.length) {
+              const preferred = pool.filter(v => preferList.some(p => v.codecs.includes(p)));
+              if (preferred.length) pool = preferred;
+            }
+
+            if (forceLowest && pool.length) {
+              pool = [ pool.reduce((a,b)=> (a.bw||1e12) <= (b.bw||1e12) ? a : b) ];
+            } else if (!isNaN(capKbps) && capKbps > 0 && pool.length) {
+              const cap = capKbps * 1000;
+              const fit = pool.filter(v => (v.bw||Infinity) <= cap);
+              pool = fit.length ? fit : [ pool.reduce((a,b)=> (a.bw||1e12) <= (b.bw||1e12) ? a : b) ];
+            }
+
+            const body = (pool.length ? pool : variants).map(g => `${g.info}\n${toProxy(g.url)}`).join('\n');
             outText = headerLines.join('\n') + '\n' + body + '\n';
           } else {
             outText = text.split(/\r?\n/).map(line => {

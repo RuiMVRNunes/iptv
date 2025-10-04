@@ -39,22 +39,7 @@
 <body>
   <header><h1>IPTV Web Player (Tesla friendly)</h1></header>
 
-  <div id="loginOverlay" class="overlay" hidden>
-    <div class="login-card">
-      <h2>Entrar</h2>
-      <label>Utilizador</label>
-      <input id="authUser" type="text" autocomplete="username" value="rui" />
-      <label>Palavra-passe</label>
-      <input id="authPass" type="password" autocomplete="current-password" value="Qwerty86!" />
-      <div class="err" id="authErr"></div>
-      <div class="controls" style="justify-content:flex-end">
-        <button id="authBtn" class="btn">Entrar</button>
-      </div>
-      <div class="tip" style="margin-top:8px">Depois de entrar, os canais do Xtream serao carregados automaticamente.</div>
-    </div>
-  </div>
-
-  <div class="wrap" id="app" style="visibility:hidden">
+  <div class="wrap" id="app">
     <aside class="panel">
       <label for="playlistUrl">Playlist M3U URL (remota)</label>
       <input id="playlistUrl" type="text" placeholder="https://servidor/playlist.m3u (ou usa Xtream abaixo)" />
@@ -76,7 +61,7 @@
       <input id="proxyBase" type="text" value="/proxy?ua=chrome&referer=http://zxc.rekpv.com:8080&avoid_codecs=hvc1,hev1,ac-3,ec-3&prefer_codecs=avc1,mp4a&url=" />
 
       <div class="sep"></div>
-      <div class="tip" style="margin-bottom:6px">Login Xtream (carrega lista automaticamente apos login)</div>
+      <div class="tip" style="margin-bottom:6px">Login Xtream (carrega lista automaticamente)</div>
       <label for="xtBase">Portal Xtream</label>
       <input id="xtBase" type="text" value="http://zxc.rekpv.com:8080" />
       <div class="controls" style="margin-top:6px">
@@ -101,7 +86,7 @@
 
       <div class="list" id="channelList"></div>
       <div class="muted" id="status" style="margin-top:8px"></div>
-      <div class="muted" style="margin-top:8px">Se um canal não der no browser do Tesla, clica “Compatibilidade (FFmpeg)”.</div>
+      <div class="muted" style="margin-top:8px">Se um canal não der, usa o botão “Compatibilidade (FFmpeg)”.</div>
     </aside>
 
     <main class="panel">
@@ -122,44 +107,6 @@
   </div>
 
   <script>
-    const loginOverlay = document.getElementById('loginOverlay');
-    const authUser = document.getElementById('authUser');
-    const authPass = document.getElementById('authPass');
-    const authBtn  = document.getElementById('authBtn');
-    const authErr  = document.getElementById('authErr');
-    const appWrap  = document.getElementById('app');
-
-    const APP_USER = 'rui';
-    const APP_PASS = 'Qwerty86!';
-
-    function showApp(){
-      try { loginOverlay.remove(); } catch(e) { loginOverlay.hidden = true; }
-      appWrap.style.visibility = 'visible';
-      syncProxyBaseFromXtream();
-      if (document.getElementById('xtAuto').checked) {
-        setTimeout(function(){ loginXtream(); }, 200);
-      }
-    }
-
-    function doLogin(){
-      var u = (authUser.value || '').trim();
-      var p = (authPass.value || '').trim();
-      if (u === APP_USER && p === APP_PASS){
-        localStorage.setItem('app_login_ok','1');
-        showApp();
-      } else {
-        authErr.textContent = 'Credenciais invalidas.';
-      }
-    }
-    authBtn.addEventListener('click', doLogin);
-    authPass.addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
-
-    (function initLogin(){
-      var ok = localStorage.getItem('app_login_ok') === '1';
-      if (ok) { showApp(); }
-      else { loginOverlay.hidden = false; appWrap.style.visibility = 'hidden'; }
-    })();
-
     var loadBtn = document.getElementById('loadBtn');
     var fileInput = document.getElementById('fileInput');
     var playlistUrlInput = document.getElementById('playlistUrl');
@@ -188,6 +135,8 @@
     var lastUrl = null;
     var usingCompat = false;
 
+    function setStatus(msg){ statusEl.textContent = msg; }
+
     function syncProxyBaseFromXtream(){
       var inp = document.getElementById('xtBase');
       var proxyInp = document.getElementById('proxyBase');
@@ -203,7 +152,6 @@
         proxyInp.value = left + '&url=';
       }catch(e){}
     }
-
     function applyDataSaver(){ syncProxyBaseFromXtream(); }
     dataSaverSel.addEventListener('change', applyDataSaver);
 
@@ -299,8 +247,6 @@
     }
     xtLoginBtn.addEventListener('click', loginXtream);
 
-    function setStatus(msg){ statusEl.textContent = msg; }
-
     function fetchTextViaProxy(url){
       var proxied = proxyBaseInp.value.trim() + encodeURIComponent(url);
       return fetch(proxied).then(function(r){
@@ -387,14 +333,10 @@
       } catch (e) {}
     }
 
-    var openCompatBtn = function(show){ compatBtn.style.display = show ? '' : 'none'; };
-    openCompatBtn(true);
-
     function playChannel(ch){
       nowPlaying.textContent = 'A reproduzir: ' + ch.name;
       lastUrl = ch.url;
       usingCompat = false;
-      openCompatBtn(true);
       openHls(lastUrl);
     }
 
@@ -416,7 +358,7 @@
           });
           hls.on(window.Hls.Events.ERROR, function(event, data){
             setStatus('HLS error: ' + data.type + ' / ' + data.details + ' (fatal=' + data.fatal + ')');
-            if (data.fatal && !usingCompat) maybeStartCompat('remux');
+            if (data.fatal && !usingCompat) startCompat('remux', true);
           });
           hls.loadSource(proxyBaseInp.value.trim() + encodeURIComponent(url));
           hls.attachMedia(videoEl);
@@ -424,7 +366,7 @@
             populateQualitySelector(hls);
             tryAutoplay();
             if ((!hls.levels || !hls.levels.length) && !usingCompat){
-              maybeStartCompat('remux');
+              startCompat('remux', true);
             }
           });
           hlsInstance = hls;
@@ -443,16 +385,19 @@
       }
     }
 
-    compatBtn.addEventListener('click', function(){ maybeStartCompat('remux', true); });
+    compatBtn.addEventListener('click', function(){ startCompat('remux', true); });
 
-    function maybeStartCompat(mode, manual){
+    function startCompat(mode, manual){
       if (!lastUrl) return;
       usingCompat = true;
       setStatus('A iniciar modo compatibilidade ('+mode+')…');
       var b = new URL(window.location.href);
       var referer = (new URL(xtBaseInp.value || b.origin)).origin;
-      fetch('/start-compat?mode='+encodeURIComponent(mode)+'&url='+encodeURIComponent(lastUrl)+'&referer='+encodeURIComponent(referer))
-        .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      fetch('/start-compat?wait=1&auto_fallback=1&mode='+encodeURIComponent(mode)+'&url='+encodeURIComponent(lastUrl)+'&referer='+encodeURIComponent(referer))
+        .then(function(r){
+          if(!r.ok) return r.json().then(function(j){ throw new Error(j && j.error ? j.error : ('HTTP '+r.status)); });
+          return r.json();
+        })
         .then(function(j){
           setStatus('Compat '+j.mode+' pronto.');
           destroyHls();
@@ -461,11 +406,6 @@
             var h = new window.Hls({ enableWorker:true, lowLatencyMode:true, maxBufferLength:10, backBufferLength:10, liveSyncDurationCount:2 });
             h.loadSource(src); h.attachMedia(videoEl);
             h.on(window.Hls.Events.MANIFEST_PARSED, function(){ tryAutoplay(); });
-            h.on(window.Hls.Events.ERROR, function(event, data){
-              if (data.fatal && mode === 'remux' && manual !== true){
-                maybeStartCompat('transcode');
-              }
-            });
             hlsInstance = h;
           } else {
             videoEl.src = src;
@@ -475,7 +415,7 @@
         })
         .catch(function(err){
           setStatus('Compat falhou: ' + (err.message||err));
-          if (mode === 'remux' && manual !== true) maybeStartCompat('transcode');
+          usingCompat = false;
         });
     }
 

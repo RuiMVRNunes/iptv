@@ -246,13 +246,11 @@
                 hls = null;
             }
 
-            const streamUrl = proxyUrl(channel.url);
-            addDebug(`URL proxy: ${streamUrl}`, 'info');
-
             // Force native mode if requested or if MSE not supported
             if (forceNative || !Hls.isSupported()) {
-                addDebug('Usando player nativo...', 'info');
-                video.src = streamUrl;
+                addDebug('Usando player nativo (URL direta, sem proxy)...', 'info');
+                addDebug(`URL direta: ${channel.url}`, 'info');
+                video.src = channel.url;
                 video.load();
                 video.play().catch(e => {
                     console.error('Native play failed:', e);
@@ -260,6 +258,9 @@
                 });
                 return;
             }
+
+            const streamUrl = proxyUrl(channel.url);
+            addDebug(`URL proxy: ${streamUrl}`, 'info');
 
             if (Hls.isSupported()) {
                 hls = new Hls({

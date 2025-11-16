@@ -37,6 +37,8 @@ app.get('/proxy', (req, res) => {
         return res.status(400).send('invalid url');
     }
 
+    console.log(`[PROXY] ${target.pathname}`);
+
     const isHttps = target.protocol === 'https:';
     const lib = isHttps ? https : http;
 
@@ -80,11 +82,13 @@ app.get('/proxy', (req, res) => {
 
         if (isM3U8) {
             // Rewrite M3U8 content
+            console.log(`[M3U8] Rewriting ${target.pathname}`);
             const chunks = [];
             upstream.on('data', d => chunks.push(d));
             upstream.on('end', () => {
                 try {
                     const text = Buffer.concat(chunks).toString('utf8');
+                    console.log(`[M3U8] Received ${text.length} bytes`);
                     const lines = text.split(/\r?\n/);
                     const rewritten = lines.map(line => {
                         const trimmed = line.trim();

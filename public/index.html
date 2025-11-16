@@ -122,6 +122,10 @@
             <div class="player-wrapper">
                 <video id="video" controls autoplay muted></video>
             </div>
+            <div style="margin-top: 10px;">
+                <h2>Diagnóstico</h2>
+                <div style="background: #1a1a1a; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; max-height: 200px; overflow-y: auto;" id="debug"></div>
+            </div>
         </div>
     </div>
 
@@ -132,13 +136,25 @@
         const video = $('video');
         const status = $('status');
         const nowPlaying = $('nowPlaying');
+        const debug = $('debug');
 
         let channels = [];
         let hls = null;
+        let debugLog = [];
+
+        function addDebug(msg, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff6b6b' : type === 'success' ? '#51cf66' : '#aaa';
+            debugLog.push(`<div style="color: ${color};">[${timestamp}] ${msg}</div>`);
+            if (debugLog.length > 50) debugLog.shift();
+            debug.innerHTML = debugLog.join('');
+            debug.scrollTop = debug.scrollHeight;
+        }
 
         function setStatus(msg) {
             status.textContent = msg;
             console.log(msg);
+            addDebug(msg);
         }
 
         function proxyUrl(url) {
@@ -216,6 +232,7 @@
         function playChannel(channel) {
             nowPlaying.textContent = `Reproduzindo: ${channel.name}`;
             setStatus('A iniciar stream...');
+            addDebug(`URL original: ${channel.url}`, 'info');
 
             if (hls) {
                 hls.destroy();
@@ -223,6 +240,7 @@
             }
 
             const streamUrl = proxyUrl(channel.url);
+            addDebug(`URL proxy: ${streamUrl}`, 'info');
 
             if (Hls.isSupported()) {
                 hls = new Hls({
@@ -247,25 +265,41 @@
                     testBandwidth: true,
                 });
 
+                hls.on(Hls.Events.MANIFEST_LOADING, () => {
+                    addDebug('A carregar manifest...', 'info');
+                });
+
+                hls.on(Hls.Events.MANIFEST_LOADED, (event, data) => {
+                    addDebug(`Manifest carregado: ${data.levels?.length || 0} níveis`, 'success');
+                });
+
                 hls.on(Hls.Events.ERROR, (event, data) => {
                     console.error('HLS Error:', data);
+                    const errorMsg = `${data.type}: ${data.details}${data.fatal ? ' (FATAL)' : ''}`;
+                    addDebug(errorMsg, 'error');
+
+                    if (data.response) {
+                        addDebug(`HTTP ${data.response.code}: ${data.response.text || 'sem mensagem'}`, 'error');
+                    }
+                    if (data.url) {
+                        addDebug(`URL falhou: ${data.url}`, 'error');
+                    }
+
                     if (data.fatal) {
                         setStatus(`Erro: ${data.details}`);
                         switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
-                                setStatus('Erro de rede - A reconectar...');
+                                addDebug('A tentar reconectar...', 'info');
                                 setTimeout(() => hls.startLoad(), 1000);
                                 break;
                             case Hls.ErrorTypes.MEDIA_ERROR:
-                                setStatus('Erro de media - A recuperar...');
+                                addDebug('A tentar recuperar erro de media...', 'info');
                                 hls.recoverMediaError();
                                 break;
                             default:
-                                setStatus(`Erro irrecuperável: ${data.details}`);
+                                addDebug('Erro irrecuperável', 'error');
                                 break;
                         }
-                    } else {
-                        console.warn('HLS non-fatal error:', data.details);
                     }
                 });
 
@@ -274,20 +308,31 @@
                     const levels = data.levels || [];
                     if (levels.length > 0) {
                         const bitrates = levels.map(l => Math.round((l.bitrate || 0) / 1000)).join(', ');
-                        setStatus(`Stream pronta (${levels.length} qualidades: ${bitrates} kbps)`);
+                        addDebug(`${levels.length} qualidades: ${bitrates} kbps`, 'success');
+                        setStatus(`Stream pronta (${levels.length} qualidades)`);
                     } else {
+                        addDebug('Nenhuma qualidade encontrada!', 'error');
                         setStatus('Stream pronta');
                     }
                     video.play().catch(e => {
                         console.log('Autoplay bloqueado:', e);
-                        setStatus('Clica no player para iniciar');
+                        addDebug('Autoplay bloqueado - clica para iniciar', 'info');
                     });
                 });
 
-                hls.on(Hls.Events.BUFFER_APPENDING, () => {
-                    console.log('Buffering...');
+                hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+                    addDebug(`Mudou para qualidade nível ${data.level}`, 'info');
                 });
 
+                hls.on(Hls.Events.FRAG_LOADING, (event, data) => {
+                    addDebug(`A carregar segmento ${data.frag.sn}...`, 'info');
+                });
+
+                hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+                    addDebug(`Segmento ${data.frag.sn} carregado (${Math.round(data.frag.duration * 1000)}ms)`, 'success');
+                });
+
+                addDebug('A iniciar HLS.js...', 'info');
                 hls.loadSource(streamUrl);
                 hls.attachMedia(video);
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {

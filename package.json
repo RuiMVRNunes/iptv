@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "node test-channels.js"
+    "test": "node test-channels.js",
+    "test:proxy": "node test-channels-proxy.js"
   },
   "dependencies": {
     "express": "^4.19.2"

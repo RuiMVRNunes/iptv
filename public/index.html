@@ -305,8 +305,59 @@
 
                 hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
                     console.log('Manifest parsed:', data.levels);
-                    const levels = data.levels || [];
+                    const levels = hls.levels || [];
+
                     if (levels.length > 0) {
+                        // Log all codecs
+                        levels.forEach((l, i) => {
+                            const codec = l.videoCodec || 'unknown';
+                            const audioCodec = l.audioCodec || 'unknown';
+                            const bitrate = Math.round((l.bitrate || 0) / 1000);
+                            addDebug(`Nível ${i}: ${codec}/${audioCodec} @ ${bitrate}kbps`, 'info');
+                        });
+
+                        // Check HEVC support
+                        const supportsHEVC = video.canPlayType('video/mp4; codecs="hev1.1.6.L120.90"') !== '';
+                        const supportsAVC = video.canPlayType('video/mp4; codecs="avc1.42E01E"') !== '';
+                        addDebug(`Suporte: HEVC=${supportsHEVC}, H.264=${supportsAVC}`, 'info');
+
+                        // Find compatible level (prefer H.264/AVC)
+                        let compatibleLevel = -1;
+                        let bestH264Level = -1;
+                        let bestH264Bitrate = 0;
+
+                        for (let i = 0; i < levels.length; i++) {
+                            const codec = (levels[i].videoCodec || '').toLowerCase();
+                            const isH264 = codec.includes('avc') || codec.includes('h264');
+                            const isHEVC = codec.includes('hev') || codec.includes('hvc');
+                            const bitrate = levels[i].bitrate || 0;
+
+                            if (isH264) {
+                                if (bitrate > bestH264Bitrate) {
+                                    bestH264Level = i;
+                                    bestH264Bitrate = bitrate;
+                                }
+                            }
+
+                            if (compatibleLevel === -1) {
+                                if ((isH264 && supportsAVC) || (isHEVC && supportsHEVC)) {
+                                    compatibleLevel = i;
+                                }
+                            }
+                        }
+
+                        // Force best H.264 level if available
+                        if (bestH264Level !== -1) {
+                            hls.currentLevel = bestH264Level;
+                            const bitrate = Math.round(bestH264Bitrate / 1000);
+                            addDebug(`Forçado H.264 nível ${bestH264Level} (${bitrate}kbps)`, 'success');
+                        } else if (compatibleLevel !== -1 && supportsHEVC) {
+                            hls.currentLevel = compatibleLevel;
+                            addDebug(`Usando nível HEVC ${compatibleLevel}`, 'success');
+                        } else {
+                            addDebug('AVISO: Nenhum codec compatível! Pode não funcionar.', 'error');
+                        }
+
                         const bitrates = levels.map(l => Math.round((l.bitrate || 0) / 1000)).join(', ');
                         addDebug(`${levels.length} qualidades: ${bitrates} kbps`, 'success');
                         setStatus(`Stream pronta (${levels.length} qualidades)`);
@@ -314,6 +365,7 @@
                         addDebug('Nenhuma qualidade encontrada!', 'error');
                         setStatus('Stream pronta');
                     }
+
                     video.play().catch(e => {
                         console.log('Autoplay bloqueado:', e);
                         addDebug('Autoplay bloqueado - clica para iniciar', 'info');

@@ -89,6 +89,18 @@ app.get('/proxy', (req, res) => {
                 try {
                     const text = Buffer.concat(chunks).toString('utf8');
                     console.log(`[M3U8] Received ${text.length} bytes`);
+
+                    // Detect if master or media playlist
+                    const isMaster = text.includes('#EXT-X-STREAM-INF');
+                    const isMedia = text.includes('#EXTINF');
+                    console.log(`[M3U8] Type: ${isMaster ? 'MASTER' : isMedia ? 'MEDIA' : 'UNKNOWN'}`);
+
+                    if (isMaster) {
+                        // Count variants
+                        const variants = (text.match(/#EXT-X-STREAM-INF/g) || []).length;
+                        console.log(`[M3U8] Master playlist with ${variants} variants`);
+                    }
+
                     const lines = text.split(/\r?\n/);
                     const rewritten = lines.map(line => {
                         const trimmed = line.trim();

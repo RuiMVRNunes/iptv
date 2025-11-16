@@ -118,7 +118,10 @@
         </div>
 
         <div class="panel">
-            <div class="playing" id="nowPlaying">Nenhum canal selecionado</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div class="playing" id="nowPlaying">Nenhum canal selecionado</div>
+                <button id="nativeBtn" class="btn secondary" style="width: auto; padding: 8px 12px;">Modo Nativo</button>
+            </div>
             <div class="player-wrapper">
                 <video id="video" controls autoplay muted></video>
             </div>
@@ -137,10 +140,13 @@
         const status = $('status');
         const nowPlaying = $('nowPlaying');
         const debug = $('debug');
+        const nativeBtn = $('nativeBtn');
 
         let channels = [];
         let hls = null;
         let debugLog = [];
+        let currentChannel = null;
+        let forceNative = false;
 
         function addDebug(msg, type = 'info') {
             const timestamp = new Date().toLocaleTimeString();
@@ -230,6 +236,7 @@
         }
 
         function playChannel(channel) {
+            currentChannel = channel;
             nowPlaying.textContent = `Reproduzindo: ${channel.name}`;
             setStatus('A iniciar stream...');
             addDebug(`URL original: ${channel.url}`, 'info');
@@ -241,6 +248,18 @@
 
             const streamUrl = proxyUrl(channel.url);
             addDebug(`URL proxy: ${streamUrl}`, 'info');
+
+            // Force native mode if requested or if MSE not supported
+            if (forceNative || !Hls.isSupported()) {
+                addDebug('Usando player nativo...', 'info');
+                video.src = streamUrl;
+                video.load();
+                video.play().catch(e => {
+                    console.error('Native play failed:', e);
+                    addDebug(`Erro ao reproduzir: ${e.message}`, 'error');
+                });
+                return;
+            }
 
             if (Hls.isSupported()) {
                 hls = new Hls({
@@ -427,10 +446,37 @@
                 });
 
                 // Monitor video element events
+                let metadataLoadedTime = null;
+                let autoSwitchTimeout = null;
+
                 video.addEventListener('loadstart', () => addDebug('Video: loadstart', 'info'));
-                video.addEventListener('loadedmetadata', () => addDebug('Video: metadata carregada', 'success'));
-                video.addEventListener('loadeddata', () => addDebug('Video: primeiro frame carregado', 'success'));
-                video.addEventListener('canplay', () => addDebug('Video: pronto para reproduzir', 'success'));
+
+                video.addEventListener('loadedmetadata', () => {
+                    addDebug('Video: metadata carregada', 'success');
+                    metadataLoadedTime = Date.now();
+
+                    // Auto-switch to native if no frames after 5 seconds
+                    autoSwitchTimeout = setTimeout(() => {
+                        if (!forceNative && metadataLoadedTime && !video.readyState >= 2) {
+                            addDebug('Sem frames após 5s - mudando para nativo automaticamente...', 'error');
+                            forceNative = true;
+                            nativeBtn.textContent = 'Modo HLS.js';
+                            nativeBtn.style.background = '#51cf66';
+                            playChannel(currentChannel);
+                        }
+                    }, 5000);
+                });
+
+                video.addEventListener('loadeddata', () => {
+                    addDebug('Video: primeiro frame carregado', 'success');
+                    if (autoSwitchTimeout) clearTimeout(autoSwitchTimeout);
+                });
+
+                video.addEventListener('canplay', () => {
+                    addDebug('Video: pronto para reproduzir', 'success');
+                    if (autoSwitchTimeout) clearTimeout(autoSwitchTimeout);
+                });
+
                 video.addEventListener('playing', () => addDebug('Video: a reproduzir!', 'success'));
                 video.addEventListener('waiting', () => addDebug('Video: a aguardar dados...', 'info'));
                 video.addEventListener('stalled', () => addDebug('Video: stalled', 'error'));
@@ -460,6 +506,19 @@
         }
 
         loginBtn.addEventListener('click', loadChannels);
+
+        // Native mode button
+        nativeBtn.addEventListener('click', () => {
+            if (!currentChannel) {
+                addDebug('Escolhe um canal primeiro', 'error');
+                return;
+            }
+            forceNative = !forceNative;
+            nativeBtn.textContent = forceNative ? 'Modo HLS.js' : 'Modo Nativo';
+            nativeBtn.style.background = forceNative ? '#51cf66' : '#223354';
+            addDebug(`Modo ${forceNative ? 'nativo' : 'HLS.js'} ativado - a recarregar...`, 'info');
+            playChannel(currentChannel);
+        });
 
         // Auto-load on enter
         [$('xtUrl'), $('xtUser'), $('xtPass')].forEach(input => {

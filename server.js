@@ -57,7 +57,7 @@ app.get('/proxy', (req, res) => {
         path: target.pathname + target.search,
         method: 'GET',
         headers,
-        timeout: 20000,
+        timeout: 30000, // Increased for Full HD streams
     };
 
     const proxyReq = lib.request(options, (upstream) => {

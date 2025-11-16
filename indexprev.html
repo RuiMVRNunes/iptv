@@ -1,0 +1,423 @@
+<!DOCTYPE html><html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IPTV Web Player (Tesla friendly)</title>
+  <link rel="icon" href="data:;base64,=">
+  <style>
+    :root { --bg:#0b1220; --fg:#e6eefc; --muted:#a7b2c7; --card:#121a2b; --accent:#5aa2ff; }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;background:var(--bg);color:#e6eefc}
+    header{padding:16px;border-bottom:1px solid #1e2a41;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent)}
+    h1{margin:0;font-size:18px}
+    .wrap{display:grid;grid-template-columns:360px 1fr;gap:16px;min-height:calc(100vh - 64px)}
+    .panel{background:var(--card);border:1px solid #1e2a41;border-radius:14px;padding:12px;margin:16px}
+    label{display:block;font-size:12px;color:var(--muted);margin:4px 0}
+    input[type="text"],input[type="password"],select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2a3959;background:#0f1728;color:#e6eefc;outline:none}
+    .btn{appearance:none;border:0;background:var(--accent);color:#06122b;padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer}
+    .btn.secondary{background:#223354;color:#cfe0ff}
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .list{margin-top:8px;max-height:60vh;overflow:auto;border-top:1px solid #1e2a41}
+    .item{padding:10px;border-bottom:1px solid #1e2a41;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+    .item:hover{background:#0f1728}
+    .muted{color:#a7b2c7;font-size:12px}
+    main.panel{display:flex;flex-direction:column;min-height:0}
+    .player{flex:1 1 auto;min-height:50vh;background:#000;border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center;width:100%}
+    video{display:block;width:100%;height:100%;background:#000;object-fit:contain}
+    @media (max-width: 900px){ .wrap{grid-template-columns:1fr} .player{min-height:40vh} }
+    .sep{height:1px;background:#1e2a41;margin:10px 0}
+    .tip{font-size:12px;color:#a7b2c7}
+    .overlay{position:fixed;inset:0;background:rgba(3,6,16,.85);display:flex;align-items:center;justify-content:center;z-index:9999;}
+    .login-card{width:min(420px, 92vw); background:var(--card); border:1px solid #1e2a41; border-radius:16px; padding:18px; box-shadow:0 10px 40px rgba(0,0,0,.5)}
+    .login-card h2{margin:0 0 12px 0;font-size:18px}
+    .err{color:#ffb3b3;font-size:12px;min-height:16px}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
+</head>
+<body>
+  <header><h1>IPTV Web Player (Tesla friendly)</h1></header>
+
+  <div class="wrap" id="app">
+    <aside class="panel">
+      <label for="playlistUrl">Playlist M3U URL (remota)</label>
+      <input id="playlistUrl" type="text" placeholder="https://servidor/playlist.m3u (ou usa Xtream abaixo)" />
+      <div class="controls" style="margin-top:8px">
+        <button id="loadBtn" class="btn">Carregar via Proxy</button>
+        <button id="exportBtn" class="btn secondary" title="Exportar a lista atual">Exportar M3U</button>
+        <button id="testProxyBtn" class="btn secondary" title="Testar ligação ao proxy">Testar Proxy</button>
+      </div>
+
+  <div class="sep"></div>
+
+  <label>Ou carregar de um ficheiro M3U/M3U8 (local)</label>
+  <input id="fileInput" type="file" accept=".m3u,.m3u8,text/plain" />
+  <div class="tip">Dica: No VLC, abre a tua lista -> Save Playlist to File… e escolhe .m3u</div>
+
+  <div class="sep"></div>
+
+  <label for="proxyBase">Proxy base</label>
+  <input id="proxyBase" type="text" value="/proxy?ua=chrome&referer=http://zxc.rekpv.com:8080&avoid_codecs=hvc1,hev1,ac-3,ec-3&prefer_codecs=avc1,mp4a&url=" />
+
+  <div class="sep"></div>
+  <div class="tip" style="margin-bottom:6px">Login Xtream (carrega lista automaticamente)</div>
+  <label for="xtBase">Portal Xtream</label>
+  <input id="xtBase" type="text" value="http://zxc.rekpv.com:8080" />
+  <div class="controls" style="margin-top:6px">
+    <input id="xtUser" type="text" placeholder="username" style="flex:1" value="uvxctmoh" />
+    <input id="xtPass" type="text" placeholder="password" style="flex:1" value="pLv486e0Qh" />
+  </div>
+  <div class="controls" style="margin-top:6px">
+    <button id="xtLoginBtn" class="btn">Entrar (Xtream)</button>
+    <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="xtRemember" type="checkbox" checked> Lembrar</label>
+    <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="xtAuto" type="checkbox" checked> Auto carregar</label>
+  </div>
+
+  <div class="sep"></div>
+  <div class="controls">
+    <select id="dataSaver" class="btn secondary" title="Limita bitrate no proxy (master m3u8)">
+      <option value="">Poupança: desligada</option>
+      <option value="800">Poupança ~800 kbps</option>
+      <option value="1200" selected>Poupança ~1.2 Mbps</option>
+      <option value="force_lowest">Forçar mais baixo</option>
+    </select>
+  </div>
+
+  <div class="list" id="channelList"></div>
+  <div class="muted" id="status" style="margin-top:8px"></div>
+  <div class="muted" style="margin-top:8px">Se um canal não der, usa o botão “Compatibilidade (FFmpeg)”.</div>
+</aside>
+
+<main class="panel">
+  <div class="controls" style="justify-content:space-between; margin-bottom:8px">
+    <div id="nowPlaying" class="muted">Sem canal selecionado</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="autoplay" type="checkbox" checked> Autoplay</label>
+      <label style="font-size:12px;color:#a7b2c7;display:flex;gap:6px;align-items:center"><input id="startWithSound" type="checkbox"> Som ao iniciar (no clique)</label>
+      <select id="qualitySel" class="btn secondary"><option value="-1">Qualidade: Auto</option></select>
+      <button id="compatBtn" class="btn secondary" title="Força modo compatível (H.264/AAC)">Compatibilidade (FFmpeg)</button>
+      <button id="muteBtn" class="btn secondary">Som desligado</button>
+    </div>
+  </div>
+  <div class="player">
+    <video id="video" controls playsinline preload="metadata" muted autoplay></video>
+  </div>
+</main>  </div>
+
+  <script>
+    var loadBtn = document.getElementById('loadBtn');
+    var fileInput = document.getElementById('fileInput');
+    var playlistUrlInput = document.getElementById('playlistUrl');
+    var channelList = document.getElementById('channelList');
+    var videoEl = document.getElementById('video');
+    var statusEl = document.getElementById('status');
+    var nowPlaying = document.getElementById('nowPlaying');
+    var proxyBaseInp = document.getElementById('proxyBase');
+    var exportBtn = document.getElementById('exportBtn');
+    var testProxyBtn = document.getElementById('testProxyBtn');
+    var autoplayChk = document.getElementById('autoplay');
+    var startWithSoundChk = document.getElementById('startWithSound');
+    var muteBtn = document.getElementById('muteBtn');
+    var xtBaseInp = document.getElementById('xtBase');
+    var xtUserInp = document.getElementById('xtUser');
+    var xtPassInp = document.getElementById('xtPass');
+    var xtLoginBtn = document.getElementById('xtLoginBtn');
+    var xtRememberChk = document.getElementById('xtRemember');
+    var xtAutoChk = document.getElementById('xtAuto');
+    var dataSaverSel = document.getElementById('dataSaver');
+    var qualitySel   = document.getElementById('qualitySel');
+    var compatBtn    = document.getElementById('compatBtn');
+
+    var channels = [];
+    var hlsInstance = null;
+    var lastUrl = null;
+    var usingCompat = false;
+
+    function setStatus(msg){ statusEl.textContent = msg; }
+
+    function syncProxyBaseFromXtream(){
+      var inp = document.getElementById('xtBase');
+      var proxyInp = document.getElementById('proxyBase');
+      if (!inp || !proxyInp) return;
+      var base = (inp.value || '').trim().replace(/\/+$/,'');
+      if (!base) return;
+      try{
+        var u = new URL(base, base.indexOf('http') === 0 ? undefined : 'http://x/');
+        var left = '/proxy?ua=chrome&referer=' + u.origin + '&avoid_codecs=hvc1,hev1,ac-3,ec-3&prefer_codecs=avc1,mp4a';
+        var ds = (dataSaverSel && dataSaverSel.value) || '';
+        if (ds === 'force_lowest') left += '&force_lowest=1';
+        else if (ds && /^\d+$/.test(ds)) left += '&cap_kbps=' + ds;
+        proxyInp.value = left + '&url=';
+      }catch(e){}
+    }
+    function applyDataSaver(){ syncProxyBaseFromXtream(); }
+    dataSaverSel.addEventListener('change', applyDataSaver);
+
+    exportBtn.addEventListener('click', function(){
+      if(!channels.length){ setStatus('Nada para exportar.'); return; }
+      var m3u = buildM3U(channels);
+      var blob = new Blob([m3u], {type:'audio/x-mpegurl'});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'playlist-export.m3u';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      setStatus('Exportados ' + channels.length + ' canais para playlist-export.m3u');
+    });
+
+    loadBtn.addEventListener('click', function(){
+      var url = playlistUrlInput.value.trim();
+      if (!url) return;
+      setStatus('A carregar playlist (via proxy)…');
+      channelList.innerHTML = '';
+      fetchTextViaProxy(url).then(function(txt){
+        channels = parseM3U(txt);
+        renderList(channels);
+        setStatus('Carregados ' + channels.length + ' canais.');
+      }).catch(function(err){
+        console.error(err);
+        setStatus('Falha ao carregar a playlist (proxy/URL).');
+      });
+    });
+
+    fileInput.addEventListener('change', function(ev){
+      var f = ev.target.files && ev.target.files[0];
+      if(!f) return;
+      f.text().then(function(txt){
+        channels = parseM3U(txt);
+        renderList(channels);
+        setStatus('Carregados ' + channels.length + ' canais do ficheiro.');
+      }).catch(function(e){
+        console.error(e);
+        setStatus('Nao foi possivel ler o ficheiro.');
+      });
+    });
+
+    testProxyBtn.addEventListener('click', function(){
+      var base = proxyBaseInp.value.trim();
+      var testUrl = 'https://example.com/';
+      fetch(base + encodeURIComponent(testUrl)).then(function(r){
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        return r.text();
+      }).then(function(){ setStatus('OK: proxy respondeu.'); })
+        .catch(function(err){ setStatus('Proxy indisponivel: ' + (err.message||err)); });
+    });
+
+    function proxiedJson(url, proxyBase){
+      return fetch(proxyBase + encodeURIComponent(url)).then(function(r){
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      }).then(function(txt){
+        try { return JSON.parse(txt); } catch(_){
+          var i = txt.indexOf('{') !== -1 ? txt.indexOf('{') : txt.indexOf('[');
+          if (i >= 0) return JSON.parse(txt.slice(i));
+          throw new Error('Invalid JSON');
+        }
+      });
+    }
+
+    function loginXtream(){
+      var base = (xtBaseInp.value || '').trim().replace(/\/+$/,'');
+      var user = (xtUserInp.value || '').trim();
+      var pass = (xtPassInp.value || '').trim();
+      if (!base || !user || !pass){ setStatus('Preenche portal/username/password'); return; }
+      setStatus('A entrar no portal Xtream…');
+      var api = base + '/player_api.php';
+      var proxyBase = proxyBaseInp.value.trim();
+      var catsUrl = api + '?username=' + encodeURIComponent(user) + '&password=' + encodeURIComponent(pass) + '&action=get_live_categories';
+      var streamsUrl = api + '?username=' + encodeURIComponent(user) + '&password=' + encodeURIComponent(pass) + '&action=get_live_streams';
+      Promise.all([proxiedJson(catsUrl, proxyBase), proxiedJson(streamsUrl, proxyBase)]).then(function(arr){
+        var cats = arr[0], streams = arr[1];
+        var catMap = {}; if (Array.isArray(cats)) cats.forEach(function(c){ if (c && c.category_id) catMap[c.category_id] = c.category_name || ''; });
+        function makeUrl(sid){ return base + '/live/' + user + '/' + pass + '/' + sid + '.m3u8'; }
+        channels = (Array.isArray(streams) ? streams : []).map(function(s){
+          return { name: (s && s.name) ? s.name : ('#' + s.stream_id), group: catMap[s.category_id] || '', logo: s.stream_icon || '', url: makeUrl(s.stream_id) };
+        });
+        renderList(channels);
+        setStatus('Entrou. ' + channels.length + ' canais.');
+        if (xtRememberChk.checked){
+          localStorage.setItem('xtream_cfg', JSON.stringify({ base: base, user: user, pass: pass, auto: !!xtAutoChk.checked }));
+        }
+      }).catch(function(e){
+        console.error(e);
+        setStatus('Falha no portal Xtream (auth/ligacao). Verifica dados ou proxy.');
+      });
+    }
+    xtLoginBtn.addEventListener('click', loginXtream);
+
+    function fetchTextViaProxy(url){
+      var proxied = proxyBaseInp.value.trim() + encodeURIComponent(url);
+      return fetch(proxied).then(function(r){
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      });
+    }
+
+    function parseM3U(text){
+      var lines = text.split(/\r?\n/);
+      var out = [];
+      var current = null;
+      for (var i=0;i<lines.length;i++){
+        var line = lines[i].trim();
+        if (!line) continue;
+        if (line.indexOf('#EXTINF') === 0){
+          var name = line.split(',').slice(1).join(',').trim();
+          current = { name: name || 'Sem nome', url: '' };
+        } else if (current && line.charAt(0) !== '#'){
+          current.url = line;
+          out.push(current);
+          current = null;
+        }
+      }
+      return out;
+    }
+
+    function buildM3U(items){
+      var out = '#EXTM3U\n';
+      for(var i=0;i<items.length;i++){
+        var ch = items[i];
+        var name = (ch.name || 'Sem nome').replace(/\n/g,' ');
+        out += '#EXTINF:-1,' + name + '\n' + ch.url + '\n';
+      }
+      return out;
+    }
+
+    function renderList(items){
+      if (!items.length){
+        channelList.innerHTML = '<div class="muted" style="padding:10px">Sem resultados.</div>';
+        return;
+      }
+      var html = '';
+      for (var i=0;i<items.length;i++){
+        var c = items[i];
+        html += '<div class="item" data-idx="'+i+'">'+escapeHtml(c.name)+' <span class="muted">&rsaquo;</span></div>';
+      }
+      channelList.innerHTML = html;
+      Array.prototype.forEach.call(channelList.querySelectorAll('.item'), function(el){
+        el.addEventListener('click', function(){
+          var idx = Number(el.getAttribute('data-idx'));
+          if (startWithSoundChk && startWithSoundChk.checked) {
+            videoEl.muted = false;
+            muteBtn.textContent = 'Som ligado';
+          }
+          playChannel(items[idx]);
+        });
+      });
+    }
+
+    function populateQualitySelector(hls){
+      if (!qualitySel) return;
+      qualitySel.innerHTML = '<option value="-1">Qualidade: Auto</option>' +
+        (hls.levels||[]).map(function(lv,i){
+          var h = lv.height || '?';
+          var kbps = lv.bitrate ? Math.round(lv.bitrate/1000) : '?';
+          return '<option value="'+i+'">'+h+'p ~'+kbps+'kbps</option>';
+        }).join('');
+      qualitySel.onchange = function(){ hls.currentLevel = parseInt(qualitySel.value,10); };
+    }
+
+    function destroyHls(){
+      if (hlsInstance){
+        try{ hlsInstance.destroy(); }catch(e){}
+        hlsInstance = null;
+      }
+    }
+
+    function tryAutoplay(){
+      if (!autoplayChk || !autoplayChk.checked) return;
+      try {
+        var p = videoEl.play();
+        if (p && typeof p.then === 'function') { p.catch(function(){}); }
+      } catch (e) {}
+    }
+
+    function playChannel(ch){
+      nowPlaying.textContent = 'A reproduzir: ' + ch.name;
+      lastUrl = ch.url;
+      usingCompat = false;
+      openHls(lastUrl);
+    }
+
+    function openHls(url){
+      destroyHls();
+      videoEl.onerror = function(){
+        var err = videoEl.error;
+        setStatus('Erro no <video>: ' + (err && (err.message || ('code '+err.code)) || 'desconhecido'));
+      };
+      if (/\.m3u8(\?|$)/i.test(url)){
+        if (window.Hls && window.Hls.isSupported()){
+          var hls = new window.Hls({
+            enableWorker:true,
+            lowLatencyMode:true,
+            capLevelToPlayerSize:true,
+            maxBufferLength:10,
+            backBufferLength:10,
+            liveSyncDurationCount:2
+          });
+          hls.on(window.Hls.Events.ERROR, function(event, data){
+            setStatus('HLS error: ' + data.type + ' / ' + data.details + ' (fatal=' + data.fatal + ')');
+            if (data.fatal && !usingCompat) startCompat('remux', true);
+          });
+          hls.loadSource(proxyBaseInp.value.trim() + encodeURIComponent(url));
+          hls.attachMedia(videoEl);
+          hls.on(window.Hls.Events.MANIFEST_PARSED, function(){
+            populateQualitySelector(hls);
+            tryAutoplay();
+            if ((!hls.levels || !hls.levels.length) && !usingCompat){
+              startCompat('remux', true);
+            }
+          });
+          hlsInstance = hls;
+          setStatus('Reprodução HLS via proxy.');
+        } else {
+          videoEl.src = proxyBaseInp.value.trim() + encodeURIComponent(url);
+          setStatus('HLS nativo via proxy.');
+          videoEl.addEventListener('loadedmetadata', function(){ tryAutoplay(); }, { once:true });
+          videoEl.play().catch(function(){});
+        }
+      } else {
+        videoEl.src = proxyBaseInp.value.trim() + encodeURIComponent(url);
+        setStatus('Reprodução direta via proxy.');
+        videoEl.addEventListener('loadedmetadata', function(){ tryAutoplay(); }, { once:true });
+        videoEl.play().catch(function(){});
+      }
+    }
+
+    compatBtn.addEventListener('click', function(){ startCompat('remux', true); });
+
+    function startCompat(mode, manual){
+      if (!lastUrl) return;
+      usingCompat = true;
+      setStatus('A iniciar modo compatibilidade ('+mode+')…');
+      var b = new URL(window.location.href);
+      var referer = (new URL(xtBaseInp.value || b.origin)).origin;
+      fetch('/start-compat?wait=1&auto_fallback=1&mode='+encodeURIComponent(mode)+'&url='+encodeURIComponent(lastUrl)+'&referer='+encodeURIComponent(referer))
+        .then(function(r){
+          if(!r.ok) return r.json().then(function(j){ throw new Error(j && j.error ? j.error : ('HTTP '+r.status)); });
+          return r.json();
+        })
+        .then(function(j){
+          setStatus('Compat '+j.mode+' pronto.');
+          destroyHls();
+          var src = j.play;
+          if (window.Hls && window.Hls.isSupported()){
+            var h = new window.Hls({ enableWorker:true, lowLatencyMode:true, maxBufferLength:10, backBufferLength:10, liveSyncDurationCount:2 });
+            h.loadSource(src); h.attachMedia(videoEl);
+            h.on(window.Hls.Events.MANIFEST_PARSED, function(){ tryAutoplay(); });
+            hlsInstance = h;
+          } else {
+            videoEl.src = src;
+            videoEl.addEventListener('loadedmetadata', function(){ tryAutoplay(); }, { once:true });
+            videoEl.play().catch(function(){});
+          }
+        })
+        .catch(function(err){
+          setStatus('Compat falhou: ' + (err.message||err));
+          usingCompat = false;
+        });
+    }
+
+    function escapeHtml(s){ return String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"').replace(/'/g,'&#039;'); }
+  </script>
+</body>
+</html>

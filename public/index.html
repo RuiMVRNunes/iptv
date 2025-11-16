@@ -228,33 +228,64 @@
                 hls = new Hls({
                     enableWorker: true,
                     lowLatencyMode: false,
-                    maxBufferLength: 30,
-                    maxMaxBufferLength: 60,
+                    backBufferLength: 90,
+                    maxBufferLength: 60,
+                    maxMaxBufferLength: 120,
+                    maxBufferSize: 60 * 1000 * 1000, // 60 MB
+                    maxBufferHole: 0.5,
+                    highBufferWatchdogPeriod: 3,
+                    nudgeMaxRetry: 10,
+                    manifestLoadingTimeOut: 20000,
+                    manifestLoadingMaxRetry: 6,
+                    manifestLoadingRetryDelay: 1000,
+                    levelLoadingTimeOut: 20000,
+                    levelLoadingMaxRetry: 6,
+                    fragLoadingTimeOut: 30000,
+                    fragLoadingMaxRetry: 10,
+                    fragLoadingRetryDelay: 1000,
+                    startFragPrefetch: true,
+                    testBandwidth: true,
                 });
 
                 hls.on(Hls.Events.ERROR, (event, data) => {
                     console.error('HLS Error:', data);
                     if (data.fatal) {
-                        setStatus(`Erro fatal: ${data.details}`);
+                        setStatus(`Erro: ${data.details}`);
                         switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
-                                setStatus('Erro de rede - A tentar reconectar...');
-                                hls.startLoad();
+                                setStatus('Erro de rede - A reconectar...');
+                                setTimeout(() => hls.startLoad(), 1000);
                                 break;
                             case Hls.ErrorTypes.MEDIA_ERROR:
-                                setStatus('Erro de media - A tentar recuperar...');
+                                setStatus('Erro de media - A recuperar...');
                                 hls.recoverMediaError();
                                 break;
                             default:
-                                setStatus('Erro irrecuperável');
+                                setStatus(`Erro irrecuperável: ${data.details}`);
                                 break;
                         }
+                    } else {
+                        console.warn('HLS non-fatal error:', data.details);
                     }
                 });
 
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    setStatus('Stream pronta');
-                    video.play().catch(e => console.log('Autoplay bloqueado:', e));
+                hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+                    console.log('Manifest parsed:', data.levels);
+                    const levels = data.levels || [];
+                    if (levels.length > 0) {
+                        const bitrates = levels.map(l => Math.round((l.bitrate || 0) / 1000)).join(', ');
+                        setStatus(`Stream pronta (${levels.length} qualidades: ${bitrates} kbps)`);
+                    } else {
+                        setStatus('Stream pronta');
+                    }
+                    video.play().catch(e => {
+                        console.log('Autoplay bloqueado:', e);
+                        setStatus('Clica no player para iniciar');
+                    });
+                });
+
+                hls.on(Hls.Events.BUFFER_APPENDING, () => {
+                    console.log('Buffering...');
                 });
 
                 hls.loadSource(streamUrl);
@@ -264,7 +295,10 @@
                 video.src = streamUrl;
                 video.addEventListener('loadedmetadata', () => {
                     setStatus('Stream pronta (nativo)');
-                    video.play().catch(e => console.log('Autoplay bloqueado:', e));
+                    video.play().catch(e => {
+                        console.log('Autoplay bloqueado:', e);
+                        setStatus('Clica no player para iniciar');
+                    });
                 });
             } else {
                 setStatus('Browser não suporta HLS');
@@ -278,13 +312,6 @@
             input.addEventListener('keypress', e => {
                 if (e.key === 'Enter') loadChannels();
             });
-        });
-
-        // Auto-load on page load
-        window.addEventListener('load', () => {
-            if ($('xtUser').value && $('xtPass').value) {
-                loadChannels();
-            }
         });
     </script>
 </body>

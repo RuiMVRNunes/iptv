@@ -273,6 +273,9 @@
                     addDebug(`Manifest carregado: ${data.levels?.length || 0} níveis`, 'success');
                 });
 
+                let mediaErrorCount = 0;
+                let useNativeFallback = false;
+
                 hls.on(Hls.Events.ERROR, (event, data) => {
                     console.error('HLS Error:', data);
                     const errorMsg = `${data.type}: ${data.details}${data.fatal ? ' (FATAL)' : ''}`;
@@ -284,6 +287,9 @@
                     if (data.url) {
                         addDebug(`URL falhou: ${data.url}`, 'error');
                     }
+                    if (data.reason) {
+                        addDebug(`Razão: ${data.reason}`, 'error');
+                    }
 
                     if (data.fatal) {
                         setStatus(`Erro: ${data.details}`);
@@ -293,12 +299,31 @@
                                 setTimeout(() => hls.startLoad(), 1000);
                                 break;
                             case Hls.ErrorTypes.MEDIA_ERROR:
-                                addDebug('A tentar recuperar erro de media...', 'info');
-                                hls.recoverMediaError();
+                                mediaErrorCount++;
+                                addDebug(`Erro de media (${mediaErrorCount}/3) - A recuperar...`, 'info');
+
+                                if (mediaErrorCount >= 3 && !useNativeFallback) {
+                                    // Too many media errors - try native player
+                                    addDebug('Muitos erros MSE - tentando player nativo...', 'error');
+                                    useNativeFallback = true;
+                                    hls.destroy();
+                                    video.src = streamUrl;
+                                    video.play().catch(e => console.error('Native play failed:', e));
+                                } else {
+                                    hls.recoverMediaError();
+                                }
                                 break;
                             default:
                                 addDebug('Erro irrecuperável', 'error');
                                 break;
+                        }
+                    } else if (data.details === 'bufferAppendError') {
+                        addDebug('Codec incompatível com MediaSource - tentando nativo...', 'error');
+                        if (!useNativeFallback) {
+                            useNativeFallback = true;
+                            hls.destroy();
+                            video.src = streamUrl;
+                            video.play().catch(e => console.error('Native play failed:', e));
                         }
                     }
                 });
@@ -325,12 +350,17 @@
                         let compatibleLevel = -1;
                         let bestH264Level = -1;
                         let bestH264Bitrate = 0;
+                        let hasCodecInfo = false;
 
                         for (let i = 0; i < levels.length; i++) {
                             const codec = (levels[i].videoCodec || '').toLowerCase();
                             const isH264 = codec.includes('avc') || codec.includes('h264');
                             const isHEVC = codec.includes('hev') || codec.includes('hvc');
                             const bitrate = levels[i].bitrate || 0;
+
+                            if (codec && codec !== 'unknown') {
+                                hasCodecInfo = true;
+                            }
 
                             if (isH264) {
                                 if (bitrate > bestH264Bitrate) {
@@ -354,8 +384,12 @@
                         } else if (compatibleLevel !== -1 && supportsHEVC) {
                             hls.currentLevel = compatibleLevel;
                             addDebug(`Usando nível HEVC ${compatibleLevel}`, 'success');
+                        } else if (!hasCodecInfo) {
+                            // No codec info - let browser try to decode
+                            addDebug('Sem info de codec - tentando reproduzir...', 'info');
+                            // Leave on auto (-1) to let HLS.js decide
                         } else {
-                            addDebug('AVISO: Nenhum codec compatível! Pode não funcionar.', 'error');
+                            addDebug('AVISO: Nenhum codec compatível! Tentando...', 'error');
                         }
 
                         const bitrates = levels.map(l => Math.round((l.bitrate || 0) / 1000)).join(', ');
@@ -382,6 +416,29 @@
 
                 hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
                     addDebug(`Segmento ${data.frag.sn} carregado (${Math.round(data.frag.duration * 1000)}ms)`, 'success');
+                });
+
+                hls.on(Hls.Events.BUFFER_APPENDED, () => {
+                    addDebug('Buffer appended com sucesso', 'success');
+                });
+
+                hls.on(Hls.Events.BUFFER_APPENDING, () => {
+                    console.log('Appending to buffer...');
+                });
+
+                // Monitor video element events
+                video.addEventListener('loadstart', () => addDebug('Video: loadstart', 'info'));
+                video.addEventListener('loadedmetadata', () => addDebug('Video: metadata carregada', 'success'));
+                video.addEventListener('loadeddata', () => addDebug('Video: primeiro frame carregado', 'success'));
+                video.addEventListener('canplay', () => addDebug('Video: pronto para reproduzir', 'success'));
+                video.addEventListener('playing', () => addDebug('Video: a reproduzir!', 'success'));
+                video.addEventListener('waiting', () => addDebug('Video: a aguardar dados...', 'info'));
+                video.addEventListener('stalled', () => addDebug('Video: stalled', 'error'));
+                video.addEventListener('error', (e) => {
+                    const err = video.error;
+                    if (err) {
+                        addDebug(`Video error: code=${err.code} msg=${err.message || 'unknown'}`, 'error');
+                    }
                 });
 
                 addDebug('A iniciar HLS.js...', 'info');

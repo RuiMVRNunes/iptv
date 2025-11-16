@@ -102,15 +102,27 @@
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
 </head>
 <body>
-    <div class="container">
+    <!-- Login overlay -->
+    <div class="overlay" id="authOverlay">
+        <div class="login-card">
+            <h2>Autenticação</h2>
+            <input id="authUser" type="text" placeholder="Utilizador" style="margin-bottom: 10px;">
+            <input id="authPass" type="password" placeholder="Password" style="margin-bottom: 10px;">
+            <div class="err" id="authError"></div>
+            <button id="authBtn" class="btn" style="width: 100%;">Entrar</button>
+        </div>
+    </div>
+
+    <div class="container" id="mainApp" style="display: none;">
         <div class="panel">
             <h1>IPTV Player</h1>
 
-            <h2>Login Xtream</h2>
-            <input id="xtUrl" type="text" placeholder="URL (ex: http://exemplo.com:8080)" value="http://zxc.rekpv.com:8080">
-            <input id="xtUser" type="text" placeholder="Username" value="uvxctmoh">
-            <input id="xtPass" type="password" placeholder="Password" value="pLv486e0Qh">
-            <button id="loginBtn">Carregar Canais</button>
+            <h2>Opções</h2>
+            <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <input id="filterHD" type="checkbox" checked>
+                Mostrar apenas canais compatíveis (HD, sem Full HD)
+            </label>
+            <button id="loginBtn" class="btn">Carregar Canais</button>
 
             <div class="status" id="status">Pronto para carregar</div>
 
@@ -134,6 +146,16 @@
 
     <script>
         const $ = id => document.getElementById(id);
+
+        // Auth elements
+        const authOverlay = $('authOverlay');
+        const authUser = $('authUser');
+        const authPass = $('authPass');
+        const authBtn = $('authBtn');
+        const authError = $('authError');
+        const mainApp = $('mainApp');
+
+        // Main elements
         const loginBtn = $('loginBtn');
         const channelList = $('channelList');
         const video = $('video');
@@ -141,12 +163,19 @@
         const nowPlaying = $('nowPlaying');
         const debug = $('debug');
         const nativeBtn = $('nativeBtn');
+        const filterHD = $('filterHD');
+
+        // Hardcoded Xtream credentials
+        const XTREAM_URL = 'http://zxc.rekpv.com:8080';
+        const XTREAM_USER = 'uvxctmoh';
+        const XTREAM_PASS = 'pLv486e0Qh';
 
         let channels = [];
         let hls = null;
         let debugLog = [];
         let currentChannel = null;
         let forceNative = false;
+        let authenticated = false;
 
         function addDebug(msg, type = 'info') {
             const timestamp = new Date().toLocaleTimeString();
@@ -163,11 +192,32 @@
             addDebug(msg);
         }
 
+        // Authentication
+        authBtn.addEventListener('click', () => {
+            const user = authUser.value.trim();
+            const pass = authPass.value.trim();
+
+            if (user === 'rui' && pass === 'rui1986') {
+                authenticated = true;
+                authOverlay.style.display = 'none';
+                mainApp.style.display = 'grid';
+                loadChannels(); // Auto-load channels after auth
+            } else {
+                authError.textContent = 'Utilizador ou password incorretos';
+            }
+        });
+
+        // Auth on enter
+        [authUser, authPass].forEach(input => {
+            input.addEventListener('keypress', e => {
+                if (e.key === 'Enter') authBtn.click();
+            });
+        });
+
         function proxyUrl(url) {
-            const base = $('xtUrl').value.trim().replace(/\/+$/, '');
             let referer = '';
             try {
-                referer = new URL(base).origin;
+                referer = new URL(XTREAM_URL).origin;
             } catch(e) {}
             return `/proxy?referer=${encodeURIComponent(referer)}&url=${encodeURIComponent(url)}`;
         }
@@ -187,12 +237,8 @@
         }
 
         async function loadChannels() {
-            const base = $('xtUrl').value.trim().replace(/\/+$/, '');
-            const user = $('xtUser').value.trim();
-            const pass = $('xtPass').value.trim();
-
-            if (!base || !user || !pass) {
-                setStatus('Preenche todos os campos');
+            if (!authenticated) {
+                setStatus('Não autenticado');
                 return;
             }
 
@@ -200,8 +246,8 @@
             channelList.innerHTML = '';
 
             try {
-                const api = `${base}/player_api.php`;
-                const streamsUrl = `${api}?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&action=get_live_streams`;
+                const api = `${XTREAM_URL}/player_api.php`;
+                const streamsUrl = `${api}?username=${encodeURIComponent(XTREAM_USER)}&password=${encodeURIComponent(XTREAM_PASS)}&action=get_live_streams`;
 
                 const streams = await fetchJson(streamsUrl);
 
@@ -211,11 +257,11 @@
 
                 channels = streams.map(s => ({
                     name: s.name || `Canal ${s.stream_id}`,
-                    url: `${base}/live/${user}/${pass}/${s.stream_id}.m3u8`
+                    url: `${XTREAM_URL}/live/${XTREAM_USER}/${XTREAM_PASS}/${s.stream_id}.m3u8`,
+                    original: s
                 }));
 
                 renderChannels();
-                setStatus(`${channels.length} canais carregados`);
             } catch (err) {
                 console.error(err);
                 setStatus(`Erro: ${err.message}`);
@@ -223,9 +269,31 @@
         }
 
         function renderChannels() {
-            channelList.innerHTML = channels.map((ch, idx) =>
-                `<div class="channel-item" data-idx="${idx}">${ch.name}</div>`
-            ).join('');
+            // Filter out Full HD channels if checkbox is checked
+            const shouldFilter = filterHD && filterHD.checked;
+            const filtered = shouldFilter
+                ? channels.filter(ch => {
+                    const name = ch.name.toLowerCase();
+                    // Exclude Full HD, FHD, 1080p, UHD, 4K
+                    return !name.includes('full hd') &&
+                           !name.includes('fullhd') &&
+                           !name.includes('fhd') &&
+                           !name.includes('1080p') &&
+                           !name.includes('uhd') &&
+                           !name.includes('4k');
+                })
+                : channels;
+
+            if (filtered.length === 0) {
+                channelList.innerHTML = '<div class="muted" style="padding:10px">Sem canais compatíveis</div>';
+                setStatus('0 canais compatíveis');
+                return;
+            }
+
+            channelList.innerHTML = filtered.map((ch, idx) => {
+                const originalIdx = channels.indexOf(ch);
+                return `<div class="channel-item" data-idx="${originalIdx}">${ch.name}</div>`;
+            }).join('');
 
             channelList.querySelectorAll('.channel-item').forEach(el => {
                 el.addEventListener('click', () => {
@@ -233,6 +301,13 @@
                     playChannel(channels[idx]);
                 });
             });
+
+            setStatus(`${filtered.length} canais compatíveis (${channels.length} total)`);
+        }
+
+        // Re-render when filter changes
+        if (filterHD) {
+            filterHD.addEventListener('change', renderChannels);
         }
 
         function playChannel(channel) {
@@ -519,13 +594,6 @@
             nativeBtn.style.background = forceNative ? '#51cf66' : '#223354';
             addDebug(`Modo ${forceNative ? 'nativo' : 'HLS.js'} ativado - a recarregar...`, 'info');
             playChannel(currentChannel);
-        });
-
-        // Auto-load on enter
-        [$('xtUrl'), $('xtUser'), $('xtPass')].forEach(input => {
-            input.addEventListener('keypress', e => {
-                if (e.key === 'Enter') loadChannels();
-            });
         });
     </script>
 </body>

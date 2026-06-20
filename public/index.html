@@ -117,11 +117,6 @@
         <div class="panel">
             <h1>IPTV Player</h1>
 
-            <h2>Opções</h2>
-            <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                <input id="filterHD" type="checkbox" checked>
-                Mostrar apenas canais compatíveis (HD, sem Full HD)
-            </label>
             <button id="loginBtn" class="btn">Carregar Canais</button>
 
             <div class="status" id="status">Pronto para carregar</div>
@@ -159,7 +154,6 @@
         const status = $('status');
         const nowPlaying = $('nowPlaying');
         const debug = $('debug');
-        const filterHD = $('filterHD');
 
         // Hardcoded Xtream credentials
         const XTREAM_URL = 'http://zxc.rekpv.com:8080';
@@ -171,6 +165,27 @@
         let debugLog = [];
         let currentChannel = null;
         let authenticated = false;
+        let mediaRecoverCount = 0;
+        let networkRetryCount = 0;
+
+        // Full HD channels are usually HEVC/H.265, which many browsers (incl. the
+        // Tesla browser and desktop Chrome) cannot decode. We detect that at runtime
+        // and transparently fall back to the H.264 sibling of the same channel.
+        const FHD_RE = /full\s*hd|fullhd|fhd|1080p|uhd|4k/i;
+        const isFullHd = name => FHD_RE.test(name);
+        // Strip quality tags + emojis so "PT: SIC Full HD" and "PT: SIC" match.
+        const baseName = name => name
+            .replace(/^PT:\s*/i, '')
+            .replace(/\b(full\s*hd|fullhd|fhd|1080p|uhd|4k|hd)\b/ig, '')
+            .replace(/[^\w\s+]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+        function findH264Sibling(channel) {
+            const base = baseName(channel.name);
+            return channels.find(c =>
+                c !== channel && !isFullHd(c.name) && baseName(c.name) === base) || null;
+        }
 
         function addDebug(msg, type = 'info') {
             const timestamp = new Date().toLocaleTimeString();
@@ -264,60 +279,79 @@
         }
 
         function renderChannels() {
-            // Filter out Full HD channels if checkbox is checked
-            const shouldFilter = filterHD && filterHD.checked;
-            const filtered = shouldFilter
-                ? channels.filter(ch => {
-                    const name = ch.name.toLowerCase();
-                    // Exclude Full HD, FHD, 1080p, UHD, 4K
-                    return !name.includes('full hd') &&
-                           !name.includes('fullhd') &&
-                           !name.includes('fhd') &&
-                           !name.includes('1080p') &&
-                           !name.includes('uhd') &&
-                           !name.includes('4k');
-                })
-                : channels;
-
-            if (filtered.length === 0) {
-                channelList.innerHTML = '<div class="muted" style="padding:10px">Sem canais compatíveis</div>';
-                setStatus('0 canais compatíveis');
+            if (channels.length === 0) {
+                channelList.innerHTML = '<div class="muted" style="padding:10px">Sem canais</div>';
+                setStatus('0 canais');
                 return;
             }
 
-            channelList.innerHTML = filtered.map((ch, idx) => {
-                const originalIdx = channels.indexOf(ch);
-                return `<div class="channel-item" data-idx="${originalIdx}">${ch.name}</div>`;
-            }).join('');
+            channelList.innerHTML = channels.map((ch, idx) =>
+                `<div class="channel-item" data-idx="${idx}">${ch.name}</div>`).join('');
 
             channelList.querySelectorAll('.channel-item').forEach(el => {
                 el.addEventListener('click', () => {
-                    const idx = parseInt(el.dataset.idx);
-                    playChannel(channels[idx]);
+                    playChannel(channels[parseInt(el.dataset.idx)]);
                 });
             });
 
-            setStatus(`${filtered.length} canais compatíveis (${channels.length} total)`);
+            setStatus(`${channels.length} canais`);
         }
 
-        // Re-render when filter changes
-        if (filterHD) {
-            filterHD.addEventListener('change', renderChannels);
+        // Build the ordered list of sources to try for a channel.
+        // Full HD = HEVC: try server remux (keeps HEVC, ~0 CPU) -> server
+        // transcode (H.264, plays anywhere) -> the plain H.264 sibling channel.
+        function buildSources(channel) {
+            const id = channel.original && channel.original.stream_id;
+            if (isFullHd(channel.name) && id) {
+                const sources = [
+                    { url: `/stream/${id}/index.m3u8?mode=remux`, label: 'Full HD HEVC (remux)' },
+                    { url: `/stream/${id}/index.m3u8?mode=transcode`, label: 'Full HD → H.264 (transcode)' },
+                ];
+                const sib = findH264Sibling(channel);
+                if (sib) sources.push({ url: proxyUrl(sib.url), label: `H.264: ${sib.name}` });
+                return sources;
+            }
+            return [{ url: proxyUrl(channel.url), label: channel.name }];
         }
+
+        let currentSources = [];
+        let currentSourceIdx = 0;
 
         function playChannel(channel) {
             currentChannel = channel;
-            nowPlaying.textContent = `Reproduzindo: ${channel.name}`;
-            setStatus('A iniciar stream...');
-            addDebug(`URL original: ${channel.url}`, 'info');
+            currentSources = buildSources(channel);
+            currentSourceIdx = 0;
+            playSource();
+        }
+
+        // Advance to the next source in the chain (decoder failure, dead stream…).
+        function nextSource(reason) {
+            if (hls) { hls.destroy(); hls = null; }
+            if (currentSourceIdx + 1 < currentSources.length) {
+                currentSourceIdx++;
+                addDebug(`${reason} — a tentar próxima fonte: ${currentSources[currentSourceIdx].label}`, 'info');
+                setStatus(`${reason} — a mudar de fonte…`);
+                return playSource();
+            }
+            setStatus(`⚠️ ${reason} — sem mais alternativas`);
+            addDebug('Esgotadas todas as fontes', 'error');
+        }
+
+        function playSource() {
+            const src = currentSources[currentSourceIdx];
+            mediaRecoverCount = 0;
+            networkRetryCount = 0;
+            nowPlaying.textContent = `Reproduzindo: ${currentChannel.name}`;
+            setStatus(`A iniciar… (${src.label})`);
+            addDebug(`Fonte ${currentSourceIdx + 1}/${currentSources.length}: ${src.label}`, 'info');
 
             if (hls) {
                 hls.destroy();
                 hls = null;
             }
 
-            const streamUrl = proxyUrl(channel.url);
-            addDebug(`URL proxy: ${streamUrl}`, 'info');
+            const streamUrl = src.url;
+            addDebug(`URL: ${streamUrl}`, 'info');
 
             if (Hls.isSupported()) {
                 hls = new Hls({
@@ -365,22 +399,41 @@
                         addDebug(`Razão: ${data.reason}`, 'error');
                     }
 
-                    if (data.fatal) {
-                        setStatus(`Erro: ${data.details}`);
-                        switch (data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                addDebug('A tentar reconectar...', 'info');
-                                setTimeout(() => hls.startLoad(), 1000);
-                                break;
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                addDebug('Erro de media - A recuperar...', 'info');
-                                hls.recoverMediaError();
-                                break;
-                            default:
-                                addDebug('Erro irrecuperável', 'error');
-                                break;
-                        }
+                    if (!data.fatal) return;
+
+                    // A decode/append failure means this source's codec can't be
+                    // decoded here (HEVC). recoverMediaError() just loops forever on
+                    // the same segment, so jump straight to the next source.
+                    const isDecodeIssue =
+                        data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR ||
+                        data.details === Hls.ErrorDetails.BUFFER_ADD_CODEC_ERROR ||
+                        data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR;
+
+                    if (data.type === Hls.ErrorTypes.MEDIA_ERROR && isDecodeIssue) {
+                        return nextSource('Codec não suportado (HEVC?)');
                     }
+
+                    if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                        if (mediaRecoverCount < 2) {
+                            mediaRecoverCount++;
+                            addDebug(`Erro de media - a recuperar (${mediaRecoverCount}/2)...`, 'info');
+                            hls.recoverMediaError();
+                            return;
+                        }
+                        return nextSource('Erro de media');
+                    }
+
+                    if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                        if (networkRetryCount < 3) {
+                            networkRetryCount++;
+                            addDebug(`A tentar reconectar (${networkRetryCount}/3)...`, 'info');
+                            setTimeout(() => { if (hls) hls.startLoad(); }, 1000);
+                            return;
+                        }
+                        return nextSource('Canal sem resposta');
+                    }
+
+                    return nextSource(`Erro: ${data.details}`);
                 });
 
                 hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
@@ -481,22 +534,6 @@
                     console.log('Appending to buffer...');
                 });
 
-                // Monitor video element events
-                video.addEventListener('loadstart', () => addDebug('Video: loadstart', 'info'));
-                video.addEventListener('loadedmetadata', () => addDebug('Video: metadata carregada', 'success'));
-                video.addEventListener('loadeddata', () => addDebug('Video: primeiro frame carregado', 'success'));
-                video.addEventListener('canplay', () => addDebug('Video: pronto para reproduzir', 'success'));
-
-                video.addEventListener('playing', () => addDebug('Video: a reproduzir!', 'success'));
-                video.addEventListener('waiting', () => addDebug('Video: a aguardar dados...', 'info'));
-                video.addEventListener('stalled', () => addDebug('Video: stalled', 'error'));
-                video.addEventListener('error', (e) => {
-                    const err = video.error;
-                    if (err) {
-                        addDebug(`Video error: code=${err.code} msg=${err.message || 'unknown'}`, 'error');
-                    }
-                });
-
                 addDebug('A iniciar HLS.js...', 'info');
                 hls.loadSource(streamUrl);
                 hls.attachMedia(video);
@@ -516,6 +553,19 @@
         }
 
         loginBtn.addEventListener('click', loadChannels);
+
+        // Monitor video element events (registered once)
+        video.addEventListener('loadstart', () => addDebug('Video: loadstart', 'info'));
+        video.addEventListener('loadedmetadata', () => addDebug('Video: metadata carregada', 'success'));
+        video.addEventListener('loadeddata', () => addDebug('Video: primeiro frame carregado', 'success'));
+        video.addEventListener('canplay', () => addDebug('Video: pronto para reproduzir', 'success'));
+        video.addEventListener('playing', () => addDebug('Video: a reproduzir!', 'success'));
+        video.addEventListener('waiting', () => addDebug('Video: a aguardar dados...', 'info'));
+        video.addEventListener('stalled', () => addDebug('Video: stalled', 'error'));
+        video.addEventListener('error', () => {
+            const err = video.error;
+            if (err) addDebug(`Video error: code=${err.code} msg=${err.message || 'unknown'}`, 'error');
+        });
     </script>
 </body>
 </html>

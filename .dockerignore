@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.claude
+.playwright-mcp
+*.tmp.*
+channel-test-report*.json
+channel-test-report*.html
+*.jpeg
+*.png

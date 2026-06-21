@@ -1,0 +1,19 @@
+# Render Blueprint — deploys the IPTV proxy as a DOCKER service (so ffmpeg is
+# available for the /stream remux + transcode endpoint).
+#
+# How to apply:
+#   Render Dashboard -> New + -> Blueprint -> connect this repo -> Apply.
+# Render reads this file and builds from the Dockerfile (node + ffmpeg).
+#
+# Note: a Node service can't be switched to Docker in-place; this creates a
+# Docker service. If you want to keep the exact iptv-rt9f.onrender.com URL,
+# name this service to match the existing one (or rename/delete the old one).
+services:
+  - type: web
+    name: iptv
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true

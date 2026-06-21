@@ -7,96 +7,70 @@
     <link rel="icon" href="data:;base64,=">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #15171c; --panel: #1f2228; --panel2: #2a2e36;
+            --line: #313640; --txt: #e6e8ec; --muted: #8a909b; --accent: #4a9eff;
+        }
+        html, body { height: 100%; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            padding: 20px;
+            background: var(--bg); color: var(--txt); padding: 14px;
         }
         .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 20px;
+            max-width: 1500px; margin: 0 auto; height: calc(100vh - 28px);
+            display: grid; grid-template-columns: 380px 1fr; gap: 14px;
         }
-        .panel {
-            background: #2a2a2a;
-            border-radius: 8px;
-            padding: 20px;
-        }
-        h1 {
-            font-size: 24px;
-            margin-bottom: 20px;
-            color: #4a9eff;
-        }
-        h2 {
-            font-size: 16px;
-            margin: 20px 0 10px;
-            color: #999;
-        }
-        input, button, select {
-            width: 100%;
-            padding: 10px;
-            margin: 5px 0;
-            border: 1px solid #444;
-            border-radius: 4px;
-            background: #333;
-            color: #e0e0e0;
-            font-size: 14px;
-        }
-        button {
-            background: #4a9eff;
-            color: white;
-            cursor: pointer;
-            border: none;
-            font-weight: 600;
-        }
-        button:hover { background: #3a8eef; }
-        .channels {
-            max-height: 500px;
-            overflow-y: auto;
-            margin-top: 10px;
-        }
-        .channel-item {
-            padding: 12px;
-            cursor: pointer;
-            border-bottom: 1px solid #333;
-        }
-        .channel-item:hover {
-            background: #333;
-        }
-        .player-wrapper {
-            background: #000;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        video {
-            width: 100%;
-            height: 600px;
-            background: #000;
-        }
-        .status {
-            padding: 10px;
-            margin: 10px 0;
-            background: #333;
-            border-radius: 4px;
-            font-size: 12px;
-            color: #999;
-        }
-        .playing {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            color: #4a9eff;
-        }
+        .panel { background: var(--panel); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; min-height: 0; }
+        h1 { font-size: 20px; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+        h1 small { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+        input, button { font-size: 15px; border-radius: 8px; border: 1px solid var(--line);
+            background: var(--panel2); color: var(--txt); }
+        input { width: 100%; padding: 11px 12px; }
+        input:focus { outline: none; border-color: var(--accent); }
+        .toolbar { display: flex; gap: 8px; margin: 10px 0 6px; }
+        .toolbar button { padding: 9px 12px; cursor: pointer; white-space: nowrap; }
+        .toolbar button.toggle.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .count { color: var(--muted); font-size: 12px; margin: 2px 2px 8px; }
+
+        .channels { overflow-y: auto; flex: 1; margin: 0 -6px; padding: 0 6px; }
+        .ch { display: flex; align-items: center; gap: 11px; padding: 9px 8px; border-radius: 8px;
+            cursor: pointer; border: 1px solid transparent; }
+        .ch:hover { background: var(--panel2); }
+        .ch.active { background: #243044; border-color: var(--accent); }
+        .ch-logo { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 8px; background: #0e1014;
+            display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .ch-logo img { width: 100%; height: 100%; object-fit: contain; }
+        .ch-fallback { font-weight: 700; color: var(--accent); font-size: 16px; }
+        .ch-name { flex: 1; font-size: 14px; line-height: 1.25; }
+        .star { flex: 0 0 auto; background: none; border: none; color: var(--muted); font-size: 20px;
+            cursor: pointer; padding: 2px 4px; line-height: 1; }
+        .star.on { color: #ffce47; }
+
+        .now { font-size: 17px; font-weight: 600; color: var(--accent); margin-bottom: 10px; min-height: 22px; }
+        .player-wrapper { background: #000; border-radius: 10px; overflow: hidden; }
+        video { width: 100%; height: 62vh; background: #000; display: block; }
+        .status { padding: 9px 12px; margin-top: 10px; background: var(--panel2); border-radius: 8px;
+            font-size: 13px; color: var(--muted); }
+        .diag-bar { margin-top: 10px; }
+        .diag-bar button { background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer; padding: 4px 0; }
+        #debug { display: none; margin-top: 8px; background: #0e1014; padding: 10px; border-radius: 8px;
+            font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; max-height: 200px; overflow-y: auto; }
+
+        /* Login */
+        .overlay { position: fixed; inset: 0; background: rgba(10,12,16,.92); display: flex;
+            align-items: center; justify-content: center; z-index: 10; }
+        .login-card { background: var(--panel); padding: 28px; border-radius: 14px; width: 320px; max-width: 90vw; }
+        .login-card h2 { margin-bottom: 16px; }
+        .login-card input { margin-bottom: 10px; }
+        .login-card button { width: 100%; padding: 12px; background: var(--accent); border: none; color: #fff;
+            font-weight: 600; cursor: pointer; }
+        .err { color: #ff6b6b; font-size: 13px; min-height: 18px; margin-bottom: 6px; }
+
         @media (max-width: 900px) {
-            .container {
-                grid-template-columns: 1fr;
-            }
-            video {
-                height: 300px;
-            }
+            .container { grid-template-columns: 1fr; height: auto; }
+            video { height: 34vh; }
+            .channels { max-height: 46vh; }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
@@ -106,74 +80,68 @@
     <div class="overlay" id="authOverlay">
         <div class="login-card">
             <h2>Autenticação</h2>
-            <input id="authUser" type="text" placeholder="Utilizador" style="margin-bottom: 10px;">
-            <input id="authPass" type="password" placeholder="Password" style="margin-bottom: 10px;">
+            <input id="authUser" type="text" placeholder="Utilizador" autocomplete="username">
+            <input id="authPass" type="password" placeholder="Password" autocomplete="current-password">
             <div class="err" id="authError"></div>
-            <button id="authBtn" class="btn" style="width: 100%;">Entrar</button>
+            <button id="authBtn">Entrar</button>
         </div>
     </div>
 
     <div class="container" id="mainApp" style="display: none;">
         <div class="panel">
-            <h1>IPTV Player</h1>
-
-            <button id="loginBtn" class="btn">Carregar Canais</button>
-
-            <div class="status" id="status">Pronto para carregar</div>
-
+            <h1>IPTV <small id="count">a carregar…</small></h1>
+            <input id="search" type="search" placeholder="🔍 Procurar canal…" autocomplete="off">
+            <div class="toolbar">
+                <button id="favToggle" class="toggle">★ Favoritos</button>
+                <button id="reloadBtn" title="Recarregar">↻</button>
+            </div>
             <div class="channels" id="channelList"></div>
         </div>
 
         <div class="panel">
-            <div class="playing" id="nowPlaying">Nenhum canal selecionado</div>
+            <div class="now" id="nowPlaying">Nenhum canal selecionado</div>
             <div class="player-wrapper">
-                <video id="video" controls autoplay></video>
+                <video id="video" controls autoplay playsinline></video>
             </div>
-            <div style="margin-top: 10px;">
-                <h2>Diagnóstico</h2>
-                <div style="background: #1a1a1a; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; max-height: 200px; overflow-y: auto;" id="debug"></div>
+            <div class="status" id="status">Pronto</div>
+            <div class="diag-bar">
+                <button id="diagToggle">▸ Diagnóstico</button>
+                <div id="debug"></div>
             </div>
         </div>
     </div>
 
     <script>
         const $ = id => document.getElementById(id);
-
-        // Auth elements
-        const authOverlay = $('authOverlay');
-        const authUser = $('authUser');
-        const authPass = $('authPass');
-        const authBtn = $('authBtn');
-        const authError = $('authError');
-        const mainApp = $('mainApp');
-
-        // Main elements
-        const loginBtn = $('loginBtn');
-        const channelList = $('channelList');
-        const video = $('video');
-        const status = $('status');
-        const nowPlaying = $('nowPlaying');
-        const debug = $('debug');
+        const authOverlay = $('authOverlay'), authUser = $('authUser'), authPass = $('authPass');
+        const authBtn = $('authBtn'), authError = $('authError'), mainApp = $('mainApp');
+        const channelList = $('channelList'), video = $('video'), status = $('status');
+        const nowPlaying = $('nowPlaying'), debug = $('debug'), search = $('search');
+        const favToggle = $('favToggle'), reloadBtn = $('reloadBtn'), countEl = $('count'), diagToggle = $('diagToggle');
 
         // Hardcoded Xtream credentials
         const XTREAM_URL = 'http://zxc.rekpv.com:8080';
         const XTREAM_USER = 'uvxctmoh';
         const XTREAM_PASS = 'pLv486e0Qh';
 
+        // Persisted state (localStorage)
+        const LS = { auth: 'iptv_auth', favs: 'iptv_favs', last: 'iptv_last' };
+        const favs = new Set(JSON.parse(localStorage.getItem(LS.favs) || '[]'));
+        let lastId = parseInt(localStorage.getItem(LS.last) || '0') || null;
+
         let channels = [];
         let hls = null;
         let debugLog = [];
+        let debugVisible = false;
         let currentChannel = null;
         let authenticated = false;
         let mediaRecoverCount = 0;
         let networkRetryCount = 0;
+        let searchTerm = '';
+        let favsOnly = false;
 
-        // Full HD channels are usually HEVC/H.265, which many browsers (incl. the
-        // Tesla browser and desktop Chrome) cannot decode. We detect that at runtime
-        // and transparently fall back to the H.264 sibling of the same channel.
         const FHD_RE = /full\s*hd|fullhd|fhd|1080p|uhd|4k/i;
         const isFullHd = name => FHD_RE.test(name);
-        // Strip quality tags + emojis so "PT: SIC Full HD" and "PT: SIC" match.
         const baseName = name => name
             .replace(/^PT:\s*/i, '')
             .replace(/\b(full\s*hd|fullhd|fhd|1080p|uhd|4k|hd)\b/ig, '')
@@ -186,49 +154,42 @@
             return channels.find(c =>
                 c !== channel && !isFullHd(c.name) && baseName(c.name) === base) || null;
         }
+        const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+        // Debug is cheap when the panel is closed (no DOM work).
         function addDebug(msg, type = 'info') {
-            const timestamp = new Date().toLocaleTimeString();
             const color = type === 'error' ? '#ff6b6b' : type === 'success' ? '#51cf66' : '#aaa';
-            debugLog.push(`<div style="color: ${color};">[${timestamp}] ${msg}</div>`);
-            if (debugLog.length > 50) debugLog.shift();
-            debug.innerHTML = debugLog.join('');
-            debug.scrollTop = debug.scrollHeight;
+            debugLog.push(`<div style="color:${color}">[${new Date().toLocaleTimeString()}] ${msg}</div>`);
+            if (debugLog.length > 60) debugLog.shift();
+            if (debugVisible) { debug.innerHTML = debugLog.join(''); debug.scrollTop = debug.scrollHeight; }
         }
+        function setStatus(msg) { status.textContent = msg; addDebug(msg); }
 
-        function setStatus(msg) {
-            status.textContent = msg;
-            console.log(msg);
-            addDebug(msg);
+        diagToggle.addEventListener('click', () => {
+            debugVisible = !debugVisible;
+            debug.style.display = debugVisible ? 'block' : 'none';
+            diagToggle.textContent = (debugVisible ? '▾' : '▸') + ' Diagnóstico';
+            if (debugVisible) { debug.innerHTML = debugLog.join(''); debug.scrollTop = debug.scrollHeight; }
+        });
+
+        // ---- Authentication (remembered) ----
+        function doLogin() {
+            authenticated = true;
+            localStorage.setItem(LS.auth, '1');
+            authOverlay.style.display = 'none';
+            mainApp.style.display = 'grid';
+            loadChannels();
         }
-
-        // Authentication
         authBtn.addEventListener('click', () => {
-            const user = authUser.value.trim();
-            const pass = authPass.value.trim();
-
-            if (user === 'rui' && pass === 'rui1986') {
-                authenticated = true;
-                authOverlay.style.display = 'none';
-                mainApp.style.display = 'grid';
-                loadChannels(); // Auto-load channels after auth
-            } else {
-                authError.textContent = 'Utilizador ou password incorretos';
-            }
+            if (authUser.value.trim() === 'rui' && authPass.value.trim() === 'rui1986') doLogin();
+            else authError.textContent = 'Utilizador ou password incorretos';
         });
-
-        // Auth on enter
-        [authUser, authPass].forEach(input => {
-            input.addEventListener('keypress', e => {
-                if (e.key === 'Enter') authBtn.click();
-            });
-        });
+        [authUser, authPass].forEach(i => i.addEventListener('keypress', e => { if (e.key === 'Enter') authBtn.click(); }));
+        if (localStorage.getItem(LS.auth) === '1') doLogin(); // skip login next time
 
         function proxyUrl(url) {
             let referer = '';
-            try {
-                referer = new URL(XTREAM_URL).origin;
-            } catch(e) {}
+            try { referer = new URL(XTREAM_URL).origin; } catch (e) {}
             return `/proxy?referer=${encodeURIComponent(referer)}&url=${encodeURIComponent(url)}`;
         }
 
@@ -236,10 +197,8 @@
             const response = await fetch(proxyUrl(url));
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const text = await response.text();
-            // Try to parse JSON, handle garbage before/after
-            try {
-                return JSON.parse(text);
-            } catch (e) {
+            try { return JSON.parse(text); }
+            catch (e) {
                 const start = Math.max(text.indexOf('{'), text.indexOf('['));
                 if (start >= 0) return JSON.parse(text.slice(start));
                 throw new Error('Invalid JSON');
@@ -247,68 +206,105 @@
         }
 
         async function loadChannels() {
-            if (!authenticated) {
-                setStatus('Não autenticado');
-                return;
-            }
-
-            setStatus('A carregar canais...');
-            channelList.innerHTML = '';
-
+            if (!authenticated) return;
+            countEl.textContent = 'a carregar…';
             try {
-                const api = `${XTREAM_URL}/player_api.php`;
-                const streamsUrl = `${api}?username=${encodeURIComponent(XTREAM_USER)}&password=${encodeURIComponent(XTREAM_PASS)}&action=get_live_streams`;
-
+                const streamsUrl = `${XTREAM_URL}/player_api.php?username=${encodeURIComponent(XTREAM_USER)}&password=${encodeURIComponent(XTREAM_PASS)}&action=get_live_streams`;
                 const streams = await fetchJson(streamsUrl);
-
-                if (!Array.isArray(streams)) {
-                    throw new Error('Resposta inválida do servidor');
-                }
+                if (!Array.isArray(streams)) throw new Error('Resposta inválida do servidor');
 
                 channels = streams.map(s => ({
                     name: s.name || `Canal ${s.stream_id}`,
+                    id: s.stream_id,
+                    icon: s.stream_icon || '',
                     url: `${XTREAM_URL}/live/${XTREAM_USER}/${XTREAM_PASS}/${s.stream_id}.m3u8`,
                     original: s
                 }));
-
                 renderChannels();
+
+                // Scroll the last-watched channel into view
+                if (lastId) {
+                    const el = channelList.querySelector(`.ch[data-id="${lastId}"]`);
+                    if (el) el.scrollIntoView({ block: 'center' });
+                }
             } catch (err) {
                 console.error(err);
-                setStatus(`Erro: ${err.message}`);
+                countEl.textContent = 'erro';
+                setStatus(`Erro a carregar canais: ${err.message}`);
             }
+        }
+
+        function visibleChannels() {
+            let list = channels;
+            if (favsOnly) list = list.filter(c => favs.has(c.id));
+            if (searchTerm) list = list.filter(c => c.name.toLowerCase().includes(searchTerm));
+            // favourites float to the top, otherwise keep provider order
+            return [...list].sort((a, b) => (favs.has(b.id) ? 1 : 0) - (favs.has(a.id) ? 1 : 0));
+        }
+
+        function channelHtml(ch) {
+            const fav = favs.has(ch.id);
+            const active = currentChannel && currentChannel.id === ch.id;
+            const initial = (baseName(ch.name)[0] || ch.name[0] || '?').toUpperCase();
+            const logo = ch.icon
+                ? `<img src="${proxyUrl(ch.icon)}" loading="lazy" decoding="async"
+                       onerror="this.remove();this.parentNode.querySelector('.ch-fallback').style.display='block'">
+                   <span class="ch-fallback" style="display:none">${initial}</span>`
+                : `<span class="ch-fallback">${initial}</span>`;
+            return `<div class="ch${active ? ' active' : ''}" data-id="${ch.id}">
+                <div class="ch-logo">${logo}</div>
+                <div class="ch-name">${escapeHtml(ch.name)}</div>
+                <button class="star${fav ? ' on' : ''}" data-fav="${ch.id}" title="Favorito">${fav ? '★' : '☆'}</button>
+            </div>`;
         }
 
         function renderChannels() {
-            if (channels.length === 0) {
-                channelList.innerHTML = '<div class="muted" style="padding:10px">Sem canais</div>';
-                setStatus('0 canais');
-                return;
-            }
-
-            channelList.innerHTML = channels.map((ch, idx) =>
-                `<div class="channel-item" data-idx="${idx}">${ch.name}</div>`).join('');
-
-            channelList.querySelectorAll('.channel-item').forEach(el => {
-                el.addEventListener('click', () => {
-                    playChannel(channels[parseInt(el.dataset.idx)]);
-                });
-            });
-
-            setStatus(`${channels.length} canais`);
+            const list = visibleChannels();
+            channelList.innerHTML = list.length
+                ? list.map(channelHtml).join('')
+                : '<div class="count" style="padding:12px">Sem canais</div>';
+            countEl.textContent = `${list.length}${list.length !== channels.length ? '/' + channels.length : ''} canais`;
         }
 
-        // Build the ordered list of sources to try for a channel.
-        // Full HD = HEVC: try server remux (keeps HEVC, ~0 CPU) -> server
-        // transcode (H.264, plays anywhere) -> the plain H.264 sibling channel.
+        function markActive() {
+            channelList.querySelectorAll('.ch').forEach(el =>
+                el.classList.toggle('active', parseInt(el.dataset.id) === (currentChannel && currentChannel.id)));
+        }
+
+        // Event delegation: one listener for the whole list (star vs play)
+        channelList.addEventListener('click', e => {
+            const star = e.target.closest('.star');
+            if (star) {
+                e.stopPropagation();
+                const id = parseInt(star.dataset.fav);
+                if (favs.has(id)) favs.delete(id); else favs.add(id);
+                localStorage.setItem(LS.favs, JSON.stringify([...favs]));
+                renderChannels();
+                return;
+            }
+            const item = e.target.closest('.ch');
+            if (item) {
+                const ch = channels.find(c => c.id === parseInt(item.dataset.id));
+                if (ch) playChannel(ch);
+            }
+        });
+
+        search.addEventListener('input', () => { searchTerm = search.value.trim().toLowerCase(); renderChannels(); });
+        favToggle.addEventListener('click', () => { favsOnly = !favsOnly; favToggle.classList.toggle('on', favsOnly); renderChannels(); });
+        reloadBtn.addEventListener('click', loadChannels);
+
+        // ---- Playback engine (unchanged logic, lighter buffers) ----
+        // Full HD feeds are non-conformant H.264 the browser rejects, and server
+        // transcode needs CPU the free tier lacks — so play the H.264 sibling first
+        // (instant, reliable); the /stream paths remain as fallback for a CPU host.
         function buildSources(channel) {
-            const id = channel.original && channel.original.stream_id;
+            const id = channel.id;
             if (isFullHd(channel.name) && id) {
-                const sources = [
-                    { url: `/stream/${id}/index.m3u8?mode=remux`, label: 'Full HD HEVC (remux)' },
-                    { url: `/stream/${id}/index.m3u8?mode=transcode`, label: 'Full HD → H.264 (transcode)' },
-                ];
+                const sources = [];
                 const sib = findH264Sibling(channel);
                 if (sib) sources.push({ url: proxyUrl(sib.url), label: `H.264: ${sib.name}` });
+                sources.push({ url: `/stream/${id}/index.m3u8?mode=remux`, label: 'Full HD (remux)' });
+                sources.push({ url: `/stream/${id}/index.m3u8?mode=transcode`, label: 'Full HD → H.264 (transcode)' });
                 return sources;
             }
             return [{ url: proxyUrl(channel.url), label: channel.name }];
@@ -319,252 +315,117 @@
 
         function playChannel(channel) {
             currentChannel = channel;
+            lastId = channel.id;
+            localStorage.setItem(LS.last, String(channel.id));
+            markActive();
             currentSources = buildSources(channel);
             currentSourceIdx = 0;
             playSource();
         }
 
-        // Advance to the next source in the chain (decoder failure, dead stream…).
         function nextSource(reason) {
             if (hls) { hls.destroy(); hls = null; }
             if (currentSourceIdx + 1 < currentSources.length) {
                 currentSourceIdx++;
-                addDebug(`${reason} — a tentar próxima fonte: ${currentSources[currentSourceIdx].label}`, 'info');
+                addDebug(`${reason} — próxima fonte: ${currentSources[currentSourceIdx].label}`, 'info');
                 setStatus(`${reason} — a mudar de fonte…`);
                 return playSource();
             }
             setStatus(`⚠️ ${reason} — sem mais alternativas`);
-            addDebug('Esgotadas todas as fontes', 'error');
         }
 
         function playSource() {
             const src = currentSources[currentSourceIdx];
             mediaRecoverCount = 0;
             networkRetryCount = 0;
-            nowPlaying.textContent = `Reproduzindo: ${currentChannel.name}`;
+            nowPlaying.textContent = currentChannel.name;
             setStatus(`A iniciar… (${src.label})`);
-            addDebug(`Fonte ${currentSourceIdx + 1}/${currentSources.length}: ${src.label}`, 'info');
 
-            if (hls) {
-                hls.destroy();
-                hls = null;
-            }
-
+            if (hls) { hls.destroy(); hls = null; }
             const streamUrl = src.url;
-            addDebug(`URL: ${streamUrl}`, 'info');
 
             if (Hls.isSupported()) {
                 hls = new Hls({
                     enableWorker: true,
                     lowLatencyMode: false,
-                    backBufferLength: 90,
-                    maxBufferLength: 60,
-                    maxMaxBufferLength: 120,
-                    maxBufferSize: 60 * 1000 * 1000, // 60 MB
+                    backBufferLength: 30,
+                    maxBufferLength: 30,
+                    maxMaxBufferLength: 60,
+                    maxBufferSize: 30 * 1000 * 1000, // 30 MB (lighter)
                     maxBufferHole: 0.5,
-                    highBufferWatchdogPeriod: 3,
-                    nudgeMaxRetry: 10,
-                    manifestLoadingTimeOut: 20000,
-                    manifestLoadingMaxRetry: 6,
-                    manifestLoadingRetryDelay: 1000,
-                    levelLoadingTimeOut: 20000,
-                    levelLoadingMaxRetry: 6,
+                    manifestLoadingTimeOut: 15000,
+                    manifestLoadingMaxRetry: 4,
+                    levelLoadingTimeOut: 15000,
                     fragLoadingTimeOut: 30000,
-                    fragLoadingMaxRetry: 10,
-                    fragLoadingRetryDelay: 1000,
-                    startFragPrefetch: true,
-                    testBandwidth: true,
+                    fragLoadingMaxRetry: 6,
                 });
 
-                hls.on(Hls.Events.MANIFEST_LOADING, () => {
-                    addDebug('A carregar manifest...', 'info');
-                });
-
-                hls.on(Hls.Events.MANIFEST_LOADED, (event, data) => {
-                    addDebug(`Manifest carregado: ${data.levels?.length || 0} níveis`, 'success');
-                });
+                hls.on(Hls.Events.MANIFEST_LOADED, (e, data) => addDebug(`Manifest: ${data.levels?.length || 0} níveis`, 'success'));
 
                 hls.on(Hls.Events.ERROR, (event, data) => {
-                    console.error('HLS Error:', data);
-                    const errorMsg = `${data.type}: ${data.details}${data.fatal ? ' (FATAL)' : ''}`;
-                    addDebug(errorMsg, 'error');
-
-                    if (data.response) {
-                        addDebug(`HTTP ${data.response.code}: ${data.response.text || 'sem mensagem'}`, 'error');
-                    }
-                    if (data.url) {
-                        addDebug(`URL falhou: ${data.url}`, 'error');
-                    }
-                    if (data.reason) {
-                        addDebug(`Razão: ${data.reason}`, 'error');
-                    }
-
+                    addDebug(`${data.type}: ${data.details}${data.fatal ? ' (FATAL)' : ''}`, 'error');
+                    if (data.response) addDebug(`HTTP ${data.response.code}`, 'error');
                     if (!data.fatal) return;
 
-                    // A decode/append failure means this source's codec can't be
-                    // decoded here (HEVC). recoverMediaError() just loops forever on
-                    // the same segment, so jump straight to the next source.
                     const isDecodeIssue =
                         data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR ||
                         data.details === Hls.ErrorDetails.BUFFER_ADD_CODEC_ERROR ||
                         data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR;
 
                     if (data.type === Hls.ErrorTypes.MEDIA_ERROR && isDecodeIssue) {
-                        return nextSource('Codec não suportado (HEVC?)');
+                        return nextSource('Codec não suportado');
                     }
-
                     if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                        if (mediaRecoverCount < 2) {
-                            mediaRecoverCount++;
-                            addDebug(`Erro de media - a recuperar (${mediaRecoverCount}/2)...`, 'info');
-                            hls.recoverMediaError();
-                            return;
-                        }
+                        if (mediaRecoverCount < 2) { mediaRecoverCount++; hls.recoverMediaError(); return; }
                         return nextSource('Erro de media');
                     }
-
                     if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                         if (networkRetryCount < 3) {
                             networkRetryCount++;
-                            addDebug(`A tentar reconectar (${networkRetryCount}/3)...`, 'info');
+                            addDebug(`A reconectar (${networkRetryCount}/3)…`, 'info');
                             setTimeout(() => { if (hls) hls.startLoad(); }, 1000);
                             return;
                         }
                         return nextSource('Canal sem resposta');
                     }
-
                     return nextSource(`Erro: ${data.details}`);
                 });
 
-                hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
-                    console.log('Manifest parsed:', data.levels);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
                     const levels = hls.levels || [];
-
                     if (levels.length > 0) {
-                        // Log all codecs
-                        levels.forEach((l, i) => {
-                            const codec = l.videoCodec || 'unknown';
-                            const audioCodec = l.audioCodec || 'unknown';
-                            const bitrate = Math.round((l.bitrate || 0) / 1000);
-                            addDebug(`Nível ${i}: ${codec}/${audioCodec} @ ${bitrate}kbps`, 'info');
-                        });
-
-                        // Check HEVC support
-                        const supportsHEVC = video.canPlayType('video/mp4; codecs="hev1.1.6.L120.90"') !== '';
-                        const supportsAVC = video.canPlayType('video/mp4; codecs="avc1.42E01E"') !== '';
-                        addDebug(`Suporte: HEVC=${supportsHEVC}, H.264=${supportsAVC}`, 'info');
-
-                        // Find compatible level (prefer H.264/AVC)
-                        let compatibleLevel = -1;
-                        let bestH264Level = -1;
-                        let bestH264Bitrate = 0;
-                        let hasCodecInfo = false;
-
+                        // Prefer the highest-bitrate H.264 level when codecs are known.
+                        let bestH264 = -1, bestRate = 0;
                         for (let i = 0; i < levels.length; i++) {
                             const codec = (levels[i].videoCodec || '').toLowerCase();
-                            const isH264 = codec.includes('avc') || codec.includes('h264');
-                            const isHEVC = codec.includes('hev') || codec.includes('hvc');
-                            const bitrate = levels[i].bitrate || 0;
-
-                            if (codec && codec !== 'unknown') {
-                                hasCodecInfo = true;
-                            }
-
-                            if (isH264) {
-                                if (bitrate > bestH264Bitrate) {
-                                    bestH264Level = i;
-                                    bestH264Bitrate = bitrate;
-                                }
-                            }
-
-                            if (compatibleLevel === -1) {
-                                if ((isH264 && supportsAVC) || (isHEVC && supportsHEVC)) {
-                                    compatibleLevel = i;
-                                }
+                            if ((codec.includes('avc') || codec.includes('h264')) && (levels[i].bitrate || 0) > bestRate) {
+                                bestH264 = i; bestRate = levels[i].bitrate || 0;
                             }
                         }
-
-                        // Force best H.264 level if available
-                        if (bestH264Level !== -1) {
-                            hls.currentLevel = bestH264Level;
-                            const bitrate = Math.round(bestH264Bitrate / 1000);
-                            addDebug(`Forçado H.264 nível ${bestH264Level} (${bitrate}kbps)`, 'success');
-                        } else if (compatibleLevel !== -1 && supportsHEVC) {
-                            hls.currentLevel = compatibleLevel;
-                            addDebug(`Usando nível HEVC ${compatibleLevel}`, 'success');
-                        } else if (!hasCodecInfo) {
-                            // No codec info - let browser try to decode
-                            addDebug('Sem info de codec - tentando reproduzir...', 'info');
-                            // Leave on auto (-1) to let HLS.js decide
-                        } else {
-                            addDebug('AVISO: Nenhum codec compatível! Tentando...', 'error');
-                        }
-
-                        const bitrates = levels.map(l => Math.round((l.bitrate || 0) / 1000)).join(', ');
-                        addDebug(`${levels.length} qualidades: ${bitrates} kbps`, 'success');
-                        setStatus(`Stream pronta (${levels.length} qualidades)`);
+                        if (bestH264 !== -1) hls.currentLevel = bestH264;
+                        setStatus(`Stream pronta (${levels.length} qualidade${levels.length > 1 ? 's' : ''})`);
                     } else {
-                        addDebug('Nenhuma qualidade encontrada!', 'error');
                         setStatus('Stream pronta');
                     }
-
-                    video.play().catch(e => {
-                        console.log('Autoplay bloqueado:', e);
-                        addDebug('Autoplay bloqueado - clica para iniciar', 'info');
-                    });
+                    video.play().catch(() => addDebug('Autoplay bloqueado — clica no player', 'info'));
                 });
 
-                hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
-                    addDebug(`Mudou para qualidade nível ${data.level}`, 'info');
-                });
-
-                hls.on(Hls.Events.FRAG_LOADING, (event, data) => {
-                    addDebug(`A carregar segmento ${data.frag.sn}...`, 'info');
-                });
-
-                hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
-                    addDebug(`Segmento ${data.frag.sn} carregado (${Math.round(data.frag.duration * 1000)}ms)`, 'success');
-                });
-
-                hls.on(Hls.Events.BUFFER_APPENDED, () => {
-                    addDebug('Buffer appended com sucesso', 'success');
-                });
-
-                hls.on(Hls.Events.BUFFER_APPENDING, () => {
-                    console.log('Appending to buffer...');
-                });
-
-                addDebug('A iniciar HLS.js...', 'info');
                 hls.loadSource(streamUrl);
                 hls.attachMedia(video);
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                // Safari native HLS
-                video.src = streamUrl;
-                video.addEventListener('loadedmetadata', () => {
-                    setStatus('Stream pronta (nativo)');
-                    video.play().catch(e => {
-                        console.log('Autoplay bloqueado:', e);
-                        setStatus('Clica no player para iniciar');
-                    });
-                });
+                video.src = streamUrl; // Safari native HLS
+                video.play().catch(() => setStatus('Clica no player para iniciar'));
             } else {
                 setStatus('Browser não suporta HLS');
             }
         }
 
-        loginBtn.addEventListener('click', loadChannels);
-
-        // Monitor video element events (registered once)
-        video.addEventListener('loadstart', () => addDebug('Video: loadstart', 'info'));
-        video.addEventListener('loadedmetadata', () => addDebug('Video: metadata carregada', 'success'));
-        video.addEventListener('loadeddata', () => addDebug('Video: primeiro frame carregado', 'success'));
-        video.addEventListener('canplay', () => addDebug('Video: pronto para reproduzir', 'success'));
+        // Minimal video diagnostics (registered once)
         video.addEventListener('playing', () => addDebug('Video: a reproduzir!', 'success'));
-        video.addEventListener('waiting', () => addDebug('Video: a aguardar dados...', 'info'));
-        video.addEventListener('stalled', () => addDebug('Video: stalled', 'error'));
+        video.addEventListener('waiting', () => addDebug('Video: a aguardar dados…', 'info'));
         video.addEventListener('error', () => {
             const err = video.error;
-            if (err) addDebug(`Video error: code=${err.code} msg=${err.message || 'unknown'}`, 'error');
+            if (err) addDebug(`Video error: code=${err.code}`, 'error');
         });
     </script>
 </body>

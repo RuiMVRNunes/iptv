@@ -7,5 +7,5 @@ npm-debug.log
 *.tmp.*
 channel-test-report*.json
 channel-test-report*.html
-*.jpeg
-*.png
+/*.jpeg
+/*.png
